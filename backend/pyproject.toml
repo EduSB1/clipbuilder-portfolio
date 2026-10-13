@@ -1,0 +1,68 @@
+[project]
+name = "clipbuilder-backend"
+version = "0.1.0"
+description = "API do ClipBuilder — ingestão de vídeo, geração de passos por IA e exportação de documentação."
+requires-python = ">=3.12"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ruff — linter e formatador
+# ═══════════════════════════════════════════════════════════════════════════════
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = ["scratch", ".venv", "venv", "templates/*.docx"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes — nomes indefinidos, imports não usados
+    "I",    # isort — ordenação de imports
+    "B",    # flake8-bugbear — armadilhas comuns
+    "UP",   # pyupgrade — sintaxe moderna
+    "ASYNC",# flake8-async — chamadas bloqueantes dentro de async
+    "S",    # bandit — problemas de segurança
+    "C4",   # comprehensions
+    "SIM",  # simplificações
+]
+ignore = [
+    "E501",    # comprimento de linha — o formatador cuida disso
+    "S101",    # assert (usado nos testes)
+    "S104",    # bind em 0.0.0.0 é intencional dentro do container
+    "B008",    # Depends()/Header() no default é o idioma do FastAPI
+    "SIM105",  # contextlib.suppress nem sempre é mais legível
+
+    # ── Escolhas deliberadas deste código ────────────────────────────────────
+    # `try/except: pass` em torno de limpeza de arquivos temporários, leitura de
+    # cache e telemetria: falhar ali não pode derrubar a requisição principal.
+    "S110",
+    "S112",
+    # Todas as chamadas de subprocesso usam lista de argumentos (sem shell) com
+    # binários fixos — ffmpeg, ffprobe, libreoffice, yt-dlp.
+    "S603",
+    "S607",
+    # `token_type="bearer"` é o nome do campo do OAuth2, não uma senha.
+    "S105",
+    "S106",
+    # main.py carrega as settings (que injetam chaves no ambiente) antes de
+    # importar os módulos que dependem delas; a ordem é intencional.
+    "E402",
+    # Trocar `class X(str, Enum)` por `StrEnum` muda o retorno de `str(X.A)`
+    # de "X.A" para "a" — mudança de comportamento sem ganho aqui.
+    "UP042",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/*" = ["S", "T201"]     # scripts operacionais podem usar print e subprocess livremente
+"tests/*"   = ["S", "ASYNC"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "agents", "templates"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# pytest
+# ═══════════════════════════════════════════════════════════════════════════════
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]

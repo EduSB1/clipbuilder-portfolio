@@ -1,0 +1,502 @@
+.loginRoot {
+    --bg: #060a0e;
+    --surface: #0b1018;
+    --card: rgba(12, 18, 26, 0.82);
+    
+    /* Default Accent (Login) */
+    --accent-glow: rgba(14, 154, 181, 0.25);
+    --accent-border: rgba(14, 154, 181, 0.3);
+    --accent-main: #0a5d73;
+    --accent-dim: #084d5e;
+    --accent-soft: rgba(10, 93, 115, 0.09);
+    
+    --cyan: #0a5d73;
+    --cyan-dim: #084d5e;
+    --cyan-glow: rgba(10, 93, 115, 0.22);
+    --cyan-soft: rgba(10, 93, 115, 0.09);
+    
+    --text: #ddeaf4;
+    --text-secondary: #4e6878;
+    --accent: var(--accent-main);
+    --muted: #4e6878;
+    --muted2: #2e4455;
+    position: relative;
+    min-height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% -15%, #0f2032 0%, var(--bg) 52%);
+    color: var(--text);
+    font-family:
+        "DM Sans",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
+}
+
+/* Mode Variations */
+:global(body[data-auth-mode="signup"]) .loginRoot {
+    background: radial-gradient(circle at 50% -15%, #1a163a 0%, var(--bg) 52%);
+}
+:global(body[data-auth-mode="signup"]) {
+    --accent-glow: rgba(139, 92, 246, 0.25);
+    --accent-border: rgba(139, 92, 246, 0.3);
+    --accent-main: #7c3aed;
+    --accent-dim: #6d28d9;
+    --accent-soft: rgba(124, 58, 237, 0.09);
+}
+
+:global(body[data-auth-mode="reset"]) .loginRoot {
+    background: radial-gradient(circle at 50% -15%, #2a1515 0%, var(--bg) 52%);
+}
+:global(body[data-auth-mode="reset"]) {
+    --accent-glow: rgba(244, 63, 94, 0.25);
+    --accent-border: rgba(244, 63, 94, 0.3);
+    --accent-main: #e11d48;
+    --accent-dim: #be123c;
+    --accent-soft: rgba(225, 29, 72, 0.09);
+}
+
+:global(body[data-auth-mode="verify"]) .loginRoot {
+    background: radial-gradient(circle at 50% -15%, #152a15 0%, var(--bg) 52%);
+}
+:global(body[data-auth-mode="verify"]) {
+    --accent-glow: rgba(34, 197, 94, 0.25);
+    --accent-border: rgba(34, 197, 94, 0.3);
+    --accent-main: #16a34a;
+    --accent-dim: #15803d;
+    --accent-soft: rgba(22, 163, 74, 0.09);
+}
+
+.backgroundCanvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.cursorHalo {
+    position: fixed;
+    width: 360px;
+    height: 360px;
+    border-radius: 999px;
+    pointer-events: none;
+    z-index: 1;
+    background: radial-gradient(circle, var(--accent-soft) 0%, rgba(10, 93, 115, 0) 70%);
+    mix-blend-mode: screen;
+    transform: translate3d(-9999px, -9999px, 0);
+}
+
+.backdropVignette {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    background:
+        radial-gradient(1100px 700px at 50% 120%, rgba(6, 10, 14, 0.06), rgba(6, 10, 14, 0.76)),
+        linear-gradient(180deg, rgba(11, 16, 24, 0) 0%, rgba(11, 16, 24, 0.36) 100%);
+}
+
+.loginMain {
+    position: relative;
+    z-index: 3;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 32px 14px;
+}
+
+.cardPerspective {
+    width: min(100%, 430px);
+    perspective: 1100px;
+}
+
+.card {
+    --mx: 50%;
+    --my: 50%;
+    position: relative;
+    padding: 28px;
+    border-radius: 22px;
+    border: 1px solid var(--accent-border);
+    background: linear-gradient(162deg, rgba(12, 18, 26, 0.87), rgba(10, 14, 22, 0.82));
+    box-shadow: 0 30px 70px rgba(2, 8, 14, 0.74), 0 0 22px var(--accent-glow);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+    transform-style: preserve-3d;
+    will-change: transform, box-shadow;
+    backdrop-filter: blur(18px) saturate(115%);
+    animation: cardIn 0.65s cubic-bezier(0.22, 0.68, 0, 1.15) both;
+}
+
+.card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(
+        circle at var(--mx) var(--my),
+        rgba(255, 255, 255, 0.042),
+        transparent 52%
+    );
+}
+
+.card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    pointer-events: none;
+}
+
+.logoWrap,
+.btnGoogle,
+.dividerWrap,
+.form {
+    position: relative;
+    z-index: 1;
+    transform: translateZ(26px);
+}
+
+.logoWrap {
+    text-align: center;
+    animation: fadeUp 0.5s 0.12s both;
+}
+
+.brandIcon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 10px;
+    border-radius: 14px;
+    box-shadow: 0 0 24px var(--accent-glow);
+    transition: box-shadow 0.3s ease;
+}
+
+.kicker {
+    margin: 0;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.title {
+    margin: 8px 0 0;
+    font-size: clamp(1.5rem, 4vw, 1.85rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.errorBanner {
+    margin-top: 16px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(255, 90, 90, 0.44);
+    border-radius: 12px;
+    background: rgba(120, 18, 18, 0.26);
+    padding: 10px 12px;
+    font-size: 0.88rem;
+    color: #f8caca;
+    animation: errorIn 0.26s ease-out both;
+}
+
+.googleButton {
+    margin-top: 16px;
+    width: 100%;
+    height: 48px;
+    border-radius: 13px;
+    border: 1px solid var(--accent-border);
+    background: linear-gradient(180deg, rgba(12, 20, 30, 0.94), rgba(11, 16, 24, 0.92));
+    color: var(--text);
+    font-size: 0.95rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition:
+        transform 0.16s ease,
+        box-shadow 0.2s ease,
+        border-color 0.2s ease;
+}
+
+.googleButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: var(--accent-main);
+    box-shadow: 0 14px 30px var(--accent-glow);
+}
+
+.googleButton:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+.googleIcon {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    border: 1px solid var(--accent-main);
+    color: var(--text);
+    opacity: 0.8;
+    font-size: 0.7rem;
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+}
+
+.ripple {
+    position: absolute;
+    border-radius: 999px;
+    background: radial-gradient(circle, var(--accent-glow) 0%, rgba(10, 93, 115, 0) 72%);
+    animation: rippleOut 0.68s ease-out forwards;
+    pointer-events: none;
+}
+
+.divider {
+    position: relative;
+    margin: 14px 0;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.76rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    animation: fadeUp 0.4s 0.3s both;
+}
+
+.divider::before,
+.divider::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    width: 35%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent-border), transparent);
+}
+
+.divider::before {
+    left: 0;
+}
+
+.divider::after {
+    right: 0;
+}
+
+.form {
+    display: grid;
+    gap: 12px;
+    animation: fadeUp 0.4s 0.36s both;
+}
+
+.field {
+    display: grid;
+    gap: 6px;
+    font-size: 0.82rem;
+    color: var(--muted);
+}
+
+.field input {
+    width: 100%;
+    height: 47px;
+    border-radius: 12px;
+    border: 1px solid var(--accent-border);
+    background: rgba(6, 12, 18, 0.78);
+    color: var(--text);
+    padding: 0 14px;
+    outline: none;
+    transition:
+        border-color 0.2s ease,
+        box-shadow 0.2s ease,
+        background-color 0.2s ease;
+    font-size: 0.93rem;
+}
+
+.field input:focus {
+    border-color: var(--accent-main);
+    box-shadow: 0 0 0 2px var(--accent-soft), 0 0 22px var(--accent-glow);
+    background-color: rgba(7, 13, 20, 0.9);
+}
+
+.field input::placeholder {
+    color: var(--muted2);
+}
+
+.passwordWrap {
+    position: relative;
+}
+
+.passwordInput {
+    padding-right: 48px !important;
+    letter-spacing: 0.12em;
+    font-family:
+        "DM Mono",
+        ui-monospace,
+        SFMono-Regular,
+        Menlo,
+        monospace;
+    font-weight: 500;
+}
+
+.passwordToggle {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    width: 35px;
+    height: 35px;
+    border-radius: 10px;
+    border: none;
+    background: var(--accent-soft);
+    color: var(--text);
+    opacity: 0.8;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.passwordToggle:hover {
+    background: var(--accent-soft);
+    opacity: 1;
+}
+
+.eyeIcon {
+    width: 19px;
+    height: 19px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.85;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.eyeStrike {
+    opacity: 1;
+    transform-origin: center;
+    transition: opacity 0.22s ease;
+}
+
+.eyeOn .eyeStrike {
+    opacity: 0;
+}
+
+.submitButton {
+    margin-top: 4px;
+    height: 50px;
+    border-radius: 13px;
+    border: 1px solid var(--accent-border);
+    background: linear-gradient(180deg, var(--accent-soft), var(--accent-dim));
+    color: #ebf8ff;
+    font-size: 0.97rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    position: relative;
+    transition:
+        transform 0.16s ease,
+        box-shadow 0.18s ease;
+}
+
+.submitButton:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 20px 34px var(--accent-glow);
+    background: linear-gradient(180deg, var(--accent-main), var(--accent-dim));
+}
+
+.submitButton:disabled {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+.arrowIcon {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: opacity 0.18s ease;
+}
+
+.hiddenText,
+.hiddenIcon {
+    opacity: 0;
+}
+
+.spinner {
+    position: absolute;
+    width: 19px;
+    height: 19px;
+    border-radius: 999px;
+    border: 2px solid rgba(221, 234, 244, 0.36);
+    border-top-color: rgba(221, 234, 244, 0.95);
+    animation: spin 0.78s linear infinite;
+}
+
+@keyframes cardIn {
+    from {
+        opacity: 0;
+        transform: translateY(30px) scale(0.96) rotateX(5deg);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotateX(0);
+    }
+}
+
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(14px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes rippleOut {
+    from {
+        opacity: 0.7;
+        transform: scale(0.2);
+    }
+    to {
+        opacity: 0;
+        transform: scale(1);
+    }
+}
+
+@keyframes errorIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@media (max-width: 560px) {
+    .card {
+        padding: 22px;
+        border-radius: 18px;
+    }
+}

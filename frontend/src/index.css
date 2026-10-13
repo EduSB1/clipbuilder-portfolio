@@ -1,0 +1,298 @@
+@import "./styles/tokens.css";
+@import "./styles/ui.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Theme tokens live in styles/tokens.css */
+
+html,
+body {
+    height: 100%;
+    font-family:
+        "DM Sans",
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        "Roboto",
+        "Oxygen",
+        "Ubuntu",
+        "Cantarell",
+        sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+}
+
+body {
+    margin: 0;
+}
+
+#root {
+    min-height: 100%;
+}
+
+.cb-app-shell {
+    position: relative;
+    isolation: isolate;
+    z-index: 1;
+    background: transparent;
+}
+
+/* Evitar pipe/cursor ao selecionar texto em elementos de exibição */
+.cb-no-select,
+[data-no-select] {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+@layer components {
+    /* Buttons */
+    .cb-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: 10px;
+        padding: 9px 16px;
+        font-size: 13px;
+        border: 1px solid var(--border);
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        backdrop-filter: blur(12px);
+        transition: all 0.16s ease;
+    }
+
+    .cb-btn:hover:not(:disabled) {
+        background: var(--accent-subtle);
+        border-color: var(--border-strong);
+        color: var(--text-primary);
+    }
+
+    .cb-btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+    }
+
+    .cb-btn-primary {
+        background: linear-gradient(160deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 65%, black) 100%);
+        border: 1px solid var(--accent-hover);
+        color: #ffffff;
+        font-weight: 600;
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+        transition: all var(--duration-md) var(--ease-premium);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .cb-btn-primary::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(160deg, rgba(255,255,255,0.15) 0%, transparent 100%);
+        pointer-events: none;
+    }
+
+    .cb-btn-primary:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px var(--accent-glow), var(--shadow-glow);
+        border-color: var(--accent-hover);
+    }
+
+    .cb-btn-danger {
+        color: var(--danger);
+        border-color: var(--border);
+    }
+
+    .cb-btn-danger:hover:not(:disabled) {
+        background: var(--danger-subtle);
+        border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+        color: var(--danger);
+    }
+
+    /* Form inputs */
+    .cb-input,
+    .cb-textarea,
+    .cb-select {
+        background: rgba(15, 23, 42, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border-strong);
+        border-radius: 12px;
+        color: var(--text-primary);
+        font-size: 14px;
+        padding: 10px 14px;
+        transition: all 0.2s ease;
+    }
+
+    html.light .cb-input,
+    html.light .cb-textarea,
+    html.light .cb-select {
+        background: rgba(255,255,255,0.5);
+    }
+
+    .cb-input:focus,
+    .cb-textarea:focus,
+    .cb-select:focus {
+        outline: none;
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-subtle), 0 0 16px var(--accent-glow);
+    }
+
+    .cb-textarea { resize: none; }
+
+    /* Cards / Panels */
+    .cb-card {
+        background: var(--glass-bg);
+        border: 1px solid var(--border-subtle);
+        border-radius: 16px;
+        padding: 20px;
+        backdrop-filter: blur(16px) saturate(120%);
+        box-shadow: var(--shadow-sm);
+        transition: box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+
+    .cb-card:hover {
+        border-color: var(--border);
+        box-shadow: var(--shadow-md);
+    }
+
+    .cb-panel {
+        background: var(--glass-bg);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 24px;
+        backdrop-filter: blur(20px) saturate(130%);
+        box-shadow: var(--shadow-md);
+        position: relative;
+        overflow: hidden;
+    }
+
+
+    /* Modal / overlay */
+    .cb-modal-overlay {
+        background: var(--bg-overlay);
+        backdrop-filter: blur(8px) saturate(80%);
+        animation: fadeIn 0.2s ease;
+    }
+
+    .cb-modal {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow-lg), 0 0 40px rgba(15,184,216,0.08);
+        animation: scaleIn 0.25s ease;
+    }
+
+    .cb-modal-header {
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .cb-modal-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+        letter-spacing: -0.01em;
+    }
+
+    .cb-modal-body { padding: 20px 24px; }
+
+    .cb-modal-footer {
+        padding: 16px 24px 20px;
+        border-top: 1px solid var(--border-subtle);
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+    }
+
+    /* Badges / Status */
+    .cb-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+    }
+
+    .cb-badge-success {
+        background: var(--success-subtle);
+        color: var(--success);
+        border: 1px solid color-mix(in srgb, var(--success) 20%, transparent);
+    }
+
+    .cb-badge-error {
+        background: var(--danger-subtle);
+        color: var(--danger);
+        border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+    }
+
+    .cb-badge-warning {
+        background: var(--warning-subtle);
+        color: var(--warning);
+        border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+    }
+
+    .cb-badge-ai-ready {
+        background: var(--accent-subtle);
+        color: var(--accent);
+        border: 1px solid var(--border);
+        animation: subtlePulse 3s ease-in-out infinite;
+    }
+}
+
+/* Documento Profissional – layout tipo Word */
+.enhanced-doc-word-layout h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 1.25rem 0 0.75rem;
+    line-height: 1.3;
+}
+.enhanced-doc-word-layout h1:first-child {
+    margin-top: 0;
+}
+.enhanced-doc-word-layout h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 1.25rem 0 0.5rem;
+    line-height: 1.35;
+}
+.enhanced-doc-word-layout h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 1rem 0 0.4rem;
+    line-height: 1.4;
+}
+.enhanced-doc-word-layout p {
+    margin: 0.5rem 0 1rem;
+}
+.enhanced-doc-word-layout ul,
+.enhanced-doc-word-layout ol {
+    margin: 0.5rem 0 1rem;
+    padding-left: 1.5rem;
+}
+.enhanced-doc-word-layout li {
+    margin: 0.25rem 0;
+}
+.enhanced-doc-word-layout li input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+.enhanced-doc-word-layout strong {
+    font-weight: 600;
+}
+.enhanced-doc-word-layout hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 1.25rem 0;
+}
+.enhanced-doc-word-layout code {
+    font-size: 0.9em;
+    padding: 0.15em 0.35em;
+    background: #f3f4f6;
+    border-radius: 3px;
+}

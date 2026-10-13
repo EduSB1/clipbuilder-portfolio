@@ -1,0 +1,8 @@
+# Copie para cloudflare.ini e preencha com um API Token do Cloudflare
+# com permissão apenas de Zone:DNS:Edit na zona do domínio.
+#
+#   cp cloudflare.ini.example cloudflare.ini
+#   chmod 600 cloudflare.ini
+#
+# ATENÇÃO: cloudflare.ini está no .gitignore — nunca versione o arquivo real.
+dns_cloudflare_api_token = SEU_TOKEN_AQUI

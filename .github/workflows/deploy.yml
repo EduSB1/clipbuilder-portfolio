@@ -1,0 +1,102 @@
+name: Deploy ClipBuilder
+
+on:
+  push:
+    branches: [auth/clerk]
+  workflow_dispatch: # Permite rodar o deploy manualmente pelo GitHub
+
+concurrency:
+  # Dois deploys simultâneos na mesma VPS se atropelam (git reset + rebuild).
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # ── Gate: nada vai para produção sem lint, testes e build passando ──────────
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    env:
+      APP_URL: https://clipbuilder.com.br
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -euo pipefail
+
+            cd /home/Clipbuilder
+
+            # Guarda o commit atual para permitir rollback se o deploy falhar.
+            PREVIOUS_SHA="$(git rev-parse HEAD)"
+            echo "Commit atual: ${PREVIOUS_SHA}"
+
+            # Sincroniza exatamente com o GitHub.
+            git fetch origin auth/clerk
+            git checkout auth/clerk
+            git reset --hard origin/auth/clerk
+
+            rollback() {
+              echo "::error::Deploy falhou — voltando para ${PREVIOUS_SHA}"
+              git reset --hard "${PREVIOUS_SHA}"
+              docker compose up -d --build
+              exit 1
+            }
+            trap rollback ERR
+
+            docker compose up -d --build
+
+            # Espera o backend ficar saudável (o HEALTHCHECK do container é a
+            # fonte da verdade), em vez de um `sleep` fixo.
+            for i in $(seq 1 30); do
+              STATE="$(docker compose ps --format '{{.Service}} {{.Health}}' 2>/dev/null | awk '$1=="backend"{print $2}')"
+              echo "tentativa ${i}/30 — backend: ${STATE:-iniciando}"
+              [ "${STATE}" = "healthy" ] && break
+              [ "${i}" -eq 30 ] && { echo "backend não ficou saudável"; false; }
+              sleep 5
+            done
+
+            # Smoke test interno: o build de produção foi de fato servido?
+            HOME_HTML="$(curl -fsS http://127.0.0.1/)"
+            echo "$HOME_HTML" | grep -Eq '/assets/index-[^"]+\.js'
+            ! echo "$HOME_HTML" | grep -q '/src/main.jsx'
+
+            SRC_STATUS="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1/src/main.jsx)"
+            [ "$SRC_STATUS" = "404" ]
+
+            trap - ERR
+
+            # Remove imagens órfãs das builds anteriores (a VPS enche rápido com
+            # LibreOffice + ffmpeg em cada camada).
+            docker image prune -f --filter "until=168h" || true
+
+      - name: Purge Cloudflare cache
+        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ZONE_ID != '' }}
+        run: |
+          set -euo pipefail
+          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
+            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            --data '{"purge_everything":true}' >/dev/null
+
+      - name: Public smoke test (CDN/domain)
+        run: |
+          set -euo pipefail
+          HOME_HTML="$(curl -fsS "${APP_URL}/")"
+          echo "$HOME_HTML" | grep -Eq '/assets/index-[^"]+\.js'
+          ! echo "$HOME_HTML" | grep -q '/src/main.jsx'
+
+          ASSET_PATH="$(echo "$HOME_HTML" | grep -oE '/assets/index-[^"]+\.js' | head -n1)"
+          [ -n "${ASSET_PATH}" ]
+
+          ASSET_HEADERS="$(curl -fsSI "${APP_URL}${ASSET_PATH}")"
+          echo "$ASSET_HEADERS" | grep -Eiq '^HTTP/.* 200'
+          ! echo "$ASSET_HEADERS" | grep -Eiq '^content-type:.*text/html'
+
+          SRC_STATUS="$(curl -s -o /dev/null -w '%{http_code}' "${APP_URL}/src/main.jsx")"
+          [ "$SRC_STATUS" = "404" ]

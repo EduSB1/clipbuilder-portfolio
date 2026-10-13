@@ -1,0 +1,45 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+slowapi>=0.1.9
+python-multipart==0.0.20
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+email-validator>=2.0
+
+# NOTE: google-generativeai (legacy SDK) is required for direct Gemini API calls
+# in main.py and enhance.py (video upload, describe_at_timestamp, test_api_keys).
+# pydantic-ai[google] uses the newer google-genai SDK internally, but the two
+# packages can coexist. The legacy SDK is needed until those modules are migrated.
+google-generativeai>=0.8.0
+
+python-dotenv>=1.0.1
+pydantic-settings>=2.0
+pyjwt[crypto]>=2.8
+cryptography>=42.0
+httpx>=0.27
+svix>=1.30.0
+
+# PydanticAI agent framework (with Google Gemini and OpenAI model backends)
+pydantic-ai[google,openai]>=0.2.14
+
+# Export formats
+python-docx>=1.1.2
+Pillow>=10.0.0
+reportlab>=4.0.0
+markdown2>=2.4.0
+markdown>=3.5.0
+beautifulsoup4>=4.12.0
+pypdf>=4.0.0
+
+# Video ingestion
+yt-dlp>=2024.12.23
+
+
+# Database (PostgreSQL + SQLAlchemy)
+sqlalchemy>=2.0
+psycopg2-binary>=2.9
+alembic>=1.13
+docxtpl
+
+# Payment gateway (Mercado Pago)
+mercadopago>=2.2.0

@@ -1,0 +1,106 @@
+# Política de logs compartilhada: evita que os containers encham o disco da VPS.
+x-logging: &default-logging
+    driver: json-file
+    options:
+        max-size: "10m"
+        max-file: "3"
+
+services:
+    db:
+        image: postgres:16-alpine
+        restart: unless-stopped
+        logging: *default-logging
+        environment:
+            POSTGRES_DB: clipbuilder
+            POSTGRES_USER: clipbuilder
+            POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        # Sem `ports:` — o banco é acessível apenas pela rede interna do Compose.
+        # Para inspecionar localmente use: docker compose exec db psql -U clipbuilder
+        expose:
+            - "5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U clipbuilder -d clipbuilder"]
+            interval: 5s
+            timeout: 3s
+            retries: 5
+
+    backend:
+        build:
+            context: ./backend
+            dockerfile: Dockerfile
+        restart: unless-stopped
+        logging: *default-logging
+        depends_on:
+            db:
+                condition: service_healthy
+        env_file:
+            - ./.env
+        environment:
+            - DATABASE_URL=postgresql://clipbuilder:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/clipbuilder
+            - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@clipbuilder.com}
+            - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+            - CLIPBUILDER_DATA_DIR=/app/data
+            - CLIPBUILDER_LOG_DIR=/app/logs
+            - CLIPBUILDER_ICONS_DIR=/Icons
+            - CLIPBUILDER_GEMINI_MODEL=${CLIPBUILDER_GEMINI_MODEL:-models/gemini-2.5-flash}
+            - CLIPBUILDER_MAX_VIDEO_BYTES=${CLIPBUILDER_MAX_VIDEO_BYTES:-6442450944}
+            - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+            - SMTP_PORT=${SMTP_PORT:-587}
+            - SMTP_USER=${SMTP_USER:-}
+            - SMTP_PASS=${SMTP_PASS:-}
+            - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-}
+            - CLIPBUILDER_YTDLP_COOKIES_FILE=/app/data/cookies.txt
+        volumes:
+            - backend_data:/app/data
+            - backend_logs:/app/logs
+            - ./Icons:/Icons:ro
+        expose:
+            - "8000"
+        healthcheck:
+            test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+            interval: 15s
+            timeout: 5s
+            retries: 5
+            start_period: 40s
+
+    frontend:
+        build:
+            context: .
+            dockerfile: frontend/Dockerfile
+            args:
+                VITE_MP_PUBLIC_KEY: ${VITE_MP_PUBLIC_KEY:-}
+                VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+                VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-}
+        restart: unless-stopped
+        logging: *default-logging
+        depends_on:
+            backend:
+                condition: service_healthy
+        ports:
+            - "80:80"
+            - "443:443"
+        volumes:
+            - certbot_certs:/etc/letsencrypt
+            - certbot_www:/var/www/certbot
+
+    certbot:
+        image: certbot/dns-cloudflare:latest
+        restart: unless-stopped
+        logging: *default-logging
+        volumes:
+            - certbot_certs:/etc/letsencrypt
+            - certbot_www:/var/www/certbot
+            # cloudflare.ini NÃO é versionado — crie-o a partir de
+            # cloudflare.ini.example e proteja com `chmod 600`.
+            - ./cloudflare.ini:/etc/cloudflare/cloudflare.ini:ro
+        # Renovação automática a cada 12h
+        entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+
+volumes:
+    postgres_data:
+    backend_data:
+    backend_logs:
+    certbot_certs:
+    certbot_www:

@@ -1,0 +1,27 @@
+# Controle de versão e ferramentas
+.git
+.gitignore
+.ruff_cache
+.pytest_cache
+**/__pycache__
+**/*.py[cod]
+
+# Ambientes virtuais
+.venv
+venv
+env
+
+# Segredos e configuração local
+.env
+.env.*
+*.pem
+*.key
+
+# Artefatos de runtime (vêm de volumes Docker, não da imagem)
+data/
+logs/
+
+# Rascunhos e testes que não pertencem à imagem de produção
+scratch/
+tests/
+README.md

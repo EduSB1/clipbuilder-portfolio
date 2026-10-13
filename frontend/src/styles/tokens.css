@@ -1,0 +1,138 @@
+/* Global design tokens for ClipBuilder (dark + light) */
+
+/* Default - Dark Theme (Follows Login Pattern) */
+:root {
+  /* Backgrounds */
+  --bg-base:        #060a0e;
+  --bg-surface:     rgba(11, 16, 24, 0.7); /* Matching login surface */
+  --bg-card:        rgba(12, 18, 26, 0.82);
+  --bg-elevated:    rgba(15, 23, 32, 0.9);
+  --bg-overlay:     rgba(6, 10, 14, 0.8);
+
+  /* Grid */
+  --grid-color:     rgba(15, 184, 216, 0.06);
+  --grid-size:      48px;
+
+  /* Accent - Refined Deep Teal (#0a5d73) */
+  --accent:         #0a5d73;
+  --accent-hover:   #084d5e;
+  --accent-subtle:  rgba(10, 93, 115, 0.14);
+  --accent-glow:    rgba(10, 93, 115, 0.28);
+
+  /* Text */
+  --text-primary:   #ffffff;
+  --text-secondary: #94A3B8;
+  --text-muted:     #64748B;
+  --text-inverse:   #0a0a0a;
+
+  /* Borders */
+  --border:         rgba(255, 255, 255, 0.1);
+  --border-strong:  rgba(255, 255, 255, 0.2);
+  --border-subtle:  rgba(255, 255, 255, 0.05);
+
+  /* States */
+  --success:        #10B981;
+  --success-subtle: rgba(16, 185, 129, 0.12);
+  --warning:        #F59E0B;
+  --warning-subtle: rgba(245, 158, 11, 0.12);
+  --danger:         #EF4444;
+  --danger-subtle:  rgba(239, 68, 68, 0.12);
+
+  /* Shadows */
+  --shadow-sm:    0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-md:    0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-lg:    0 16px 64px rgba(0, 0, 0, 0.5);
+  --shadow-glow:  0 0 24px rgba(0, 194, 203, 0.2);
+
+  color-scheme: dark;
+
+  /* Animations */
+  --ease-premium: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-sm: 0.2s;
+  --duration-md: 0.3s;
+  --duration-lg: 0.5s;
+}
+
+/* Light Theme - Override */
+html.light,
+:root[data-theme="light"] {
+  /* Backgrounds - Premium Light (Slate/Gray) */
+  --bg-base:        #F8FAFC;
+  --bg-surface:     rgba(255, 255, 255, 0.95);
+  --bg-card:        rgba(255, 255, 255, 0.9);
+  --bg-elevated:    #ffffff;
+  --bg-overlay:     rgba(15, 23, 42, 0.6);
+
+  /* Grid */
+  --grid-color:     rgba(0, 139, 148, 0.08);
+  --grid-size:      48px;
+
+  /* Accent - More Contrast for Light Mode */
+  --accent:         #008B94;
+  --accent-hover:   #007982;
+  --accent-subtle:  rgba(0, 139, 148, 0.1);
+  --accent-glow:    rgba(0, 139, 148, 0.15);
+
+  /* Text */
+  --text-primary:   #0F172A;
+  --text-secondary: #475569;
+  --text-muted:     #94A3B8;
+  --text-inverse:   #ffffff;
+
+  /* Borders */
+  --border:         rgba(0, 0, 0, 0.1);
+  --border-strong:  rgba(0, 0, 0, 0.2);
+  --border-subtle:  rgba(0, 0, 0, 0.05);
+
+  /* States */
+  --success:        #059669;
+  --success-subtle: rgba(5, 150, 105, 0.1);
+  --warning:        #D97706;
+  --warning-subtle: rgba(217, 119, 6, 0.1);
+  --danger:         #DC2626;
+  --danger-subtle:  rgba(220, 38, 38, 0.1);
+
+  /* Shadows */
+  --shadow-sm:    0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md:    0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg:    0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-glow:  0 4px 12px rgba(0, 139, 148, 0.1);
+
+  color-scheme: light;
+}
+
+
+/* Legacy aliases and Utility Mapping */
+:root,
+html.dark,
+html.light {
+  --bg: var(--bg-base);
+  --panel: var(--bg-surface);
+  --card-bg: var(--bg-card);
+
+  --text: var(--text-primary);
+  --muted-text: var(--text-muted);
+
+  --panel-border: var(--border);
+  --card-border: var(--border);
+  --border-hi: var(--border-strong);
+
+  --accent-light: var(--accent-subtle);
+  --accent-contrast: var(--text-inverse);
+
+  --btn-hover-bg: var(--accent-subtle);
+  --btn-active-bg: color-mix(in srgb, var(--accent-subtle) 70%, transparent);
+  --focus-ring: color-mix(in srgb, var(--accent) 80%, transparent);
+
+  --success-bg: var(--success-subtle);
+  --danger-bg: var(--danger-subtle);
+  --warning-bg: var(--warning-subtle);
+
+  --modal-overlay: var(--bg-overlay);
+  --glass-bg: rgba(11, 16, 24, 0.45);
+}
+
+html.light {
+  --glass-bg: rgba(255, 255, 255, 0.65);
+}
+
