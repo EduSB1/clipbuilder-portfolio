@@ -163,8 +163,6 @@ cd backend && pytest
 
 ## Screenshots
 
-Existing captures live in [`docs/screenshots/`](docs/screenshots/):
-
 | | |
 |---|---|
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Editor](docs/screenshots/editor.png) |
@@ -172,12 +170,21 @@ Existing captures live in [`docs/screenshots/`](docs/screenshots/):
 | ![Admin users](docs/screenshots/admin-users.png) | ![Admin metrics](docs/screenshots/admin-metrics.png) |
 | **Admin — users** — roles, groups, AI quotas | **Admin — metrics** — usage and cost per model |
 
-> Still worth capturing, to round the set out:
+### The API
+
+![API docs](docs/screenshots/api-docs.png)
+
+FastAPI's interactive docs at `/docs`: video ingestion, YouTube import, AI enhancement and every export format, all documented.
+
+### Tests
+
+![Tests passing](docs/screenshots/tests-passing.png)
+
+> Still to capture, with the stack running:
 >
-> - [ ] **`export-docx.png`** — a generated Word document open in Word, showing the numbered steps with their screenshots. This is the output the client is buying; it belongs next to the editor shot.
-> - [ ] **`ai-generating.png`** — the step-generation running, with the progress state visible.
-> - [ ] **`gif-step.png`** — an animated GIF step in the editor, with its AI-written description.
-> - [ ] **`api-docs.png`** — the FastAPI interactive docs at `/docs`, showing the endpoint list. Proof that the backend is a real, documented API.
+> - [ ] **`export-docx.png`** — a generated Word document open in Word, showing the numbered steps with their screenshots. This is what the user is actually buying.
+> - [ ] **`ai-generating.png`** — step generation in progress.
+> - [ ] **`gif-step.png`** — an animated GIF step with its AI-written description.
 
 ---
 
