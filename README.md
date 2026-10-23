@@ -188,6 +188,17 @@ FastAPI's interactive docs at `/docs`: video ingestion, YouTube import, AI enhan
 
 ---
 
+## Need something like this built?
+
+ClipBuilder is a full product, but most of what it is made of — background
+jobs, AI calls, file pipelines, an API — is what I build for clients as
+freelance work: **[a custom Python script or service](https://www.fiverr.com/eduhz02/automate-your-repetitive-tasks-with-a-custom-python-script)**.
+
+Tell me what currently eats an afternoon and I'll tell you if it can be
+automated.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
