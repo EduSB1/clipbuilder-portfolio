@@ -42,6 +42,7 @@ ARG NGINX_CONF=nginx.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY frontend/${NGINX_CONF}         /etc/nginx/conf.d/default.conf
 COPY frontend/nginx-app.conf        /etc/nginx/app.conf
+COPY frontend/nginx-proxy.conf      /etc/nginx/proxy.conf
 COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 
 EXPOSE 80

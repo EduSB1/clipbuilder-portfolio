@@ -346,6 +346,26 @@ class CreditAccount(Base):
     user: Mapped[User] = relationship("User", back_populates="credit_account")
 
 
+class VideoAsset(Base):
+    """A video file in DATA_DIR and the user it belongs to.
+
+    The processing state stays in memory (main._videos), but ownership must
+    survive restarts: every video route checks it, and the retention policy
+    is applied per owner.
+    """
+
+    __tablename__ = "video_assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # uuid4().hex
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    file_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False, index=True
+    )
+
+
 # Rows that represent a paid purchase. At most one may exist per payment id:
 # the unique index below is what stops the webhook, the Pix polling and the
 # card checkout from crediting the same payment twice when they race.

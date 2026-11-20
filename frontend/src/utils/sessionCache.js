@@ -294,16 +294,17 @@ export async function restoreDashboardCache() {
       // Vídeo local perdido – usuário precisará reimportar
     }
   } else if (videoSourceType === "youtube" && videoId) {
-    // Para YouTube, reconstruir a URL do vídeo a partir do videoId
-    // A URL é servida pelo backend: /api/videos/{id}/file
-    // Precisamos do baseURL da API
+    // Para YouTube, pedir ao backend uma URL assinada nova: a anterior expira
+    // e só o dono do vídeo recebe uma.
     try {
       const { api } = await import("./api.js");
       const base = (api.defaults.baseURL || "").replace(/\/$/, "");
-      videoUrl = `${base}/videos/${videoId}/file`;
+      const res = await api.get(`/videos/${videoId}/status`);
+      if (res?.data?.file_url) {
+        videoUrl = `${base}${res.data.file_url}`;
+      }
     } catch {
-      // fallback
-      videoUrl = `/api/videos/${videoId}/file`;
+      // Vídeo expirou no servidor – usuário precisará reimportar
     }
   }
 

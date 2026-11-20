@@ -6,6 +6,7 @@ import json
 import logging
 import logging.handlers
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -68,7 +69,6 @@ from app.core.constants import (
     DEFAULT_FRAME_COUNT,
     DEFAULT_GEMINI_CLIP_SECONDS,
     DEFAULT_GEMINI_PROXY_HEIGHT,
-    DEFAULT_MAX_DATA_FILES,
     DEFAULT_MAX_VIDEO_MB,
     FRAME_EXTRACTION_WINDOW_SECONDS,
     GEMINI_POLL_INTERVAL_SECONDS,
@@ -92,6 +92,7 @@ from app.core.constants import (
     YTDLP_DEFAULT_TIMEOUT_SECONDS,
 )
 from app.database import get_db
+from app.services import video_store
 from app.tools.router import router as tools_router
 
 try:
@@ -382,6 +383,7 @@ async def _lifespan(app: FastAPI):
             UserGroup,
             UserGroupMember,
             UserPermission,
+            VideoAsset,
         )
         from app.database import Base, SessionLocal, engine
         from app.services.run_migrations import run_migrations
@@ -518,55 +520,95 @@ DATA_DIR = Path(
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 logger.info("config: CLIPBUILDER_DATA_DIR=%s", DATA_DIR)
 
-# Maximum number of video files to keep in DATA_DIR (oldest files are removed when exceeded)
-MAX_DATA_FILES = _env_int("CLIPBUILDER_MAX_DATA_FILES", DEFAULT_MAX_DATA_FILES)
-logger.info("config: CLIPBUILDER_MAX_DATA_FILES=%s", MAX_DATA_FILES)
+# ── Retention of uploaded videos ──────────────────────────────────────────
+# Videos are working material, not storage: each one is kept for a limited
+# time and each user keeps only their newest few. This replaced a global
+# "5 files on the whole server" rule, under which six simultaneous uploads
+# deleted someone else's video in the middle of their editing session.
+VIDEO_RETENTION_HOURS = _env_int("CLIPBUILDER_VIDEO_RETENTION_HOURS", 24)
+MAX_VIDEOS_PER_USER = _env_int("CLIPBUILDER_MAX_VIDEOS_PER_USER", 5)
+logger.info(
+    "config: CLIPBUILDER_VIDEO_RETENTION_HOURS=%s CLIPBUILDER_MAX_VIDEOS_PER_USER=%s",
+    VIDEO_RETENTION_HOURS,
+    MAX_VIDEOS_PER_USER,
+)
+
+# Chunked uploads: an upload that stops receiving parts for this long is
+# abandoned and its .part files are removed.
+UPLOAD_PART_MAX_AGE_SECONDS = 3600
+# Upper bound on X-Total-Chunks. The frontend sends 25 MB chunks, so this
+# covers far more than the size limit; it exists so that one request cannot
+# make the server loop over millions of chunk indexes.
+MAX_UPLOAD_CHUNKS = 4096
 
 _videos_lock = threading.Lock()
 _videos: dict[str, VideoEntry] = {}
+# upload_id -> (owner user id, time of the last part); guarded by _videos_lock.
+_uploads: dict[str, tuple[str, float]] = {}
 
 
-def _cleanup_old_files() -> None:
-    """Remove oldest video files from DATA_DIR if count exceeds MAX_DATA_FILES.
+def _cleanup_videos() -> None:
+    """Apply the retention policy and drop abandoned upload parts.
 
-    Files are sorted by modification time and the oldest ones are deleted
-    until only MAX_DATA_FILES remain.
+    Blocking (database and filesystem): call it through ``_run_blocking``
+    from async code.
     """
     try:
-        # Get all video files in DATA_DIR
-        video_files = [
-            f
-            for f in DATA_DIR.iterdir()
-            if f.is_file()
-            and f.name.startswith("video_")
-            and f.suffix.lower() in {".mp4", ".mkv"}
-        ]
-
-        if len(video_files) <= MAX_DATA_FILES:
-            return
-
-        # Sort by modification time (oldest first)
-        video_files.sort(key=lambda f: f.stat().st_mtime)
-
-        # Remove oldest files until we're at the limit
-        files_to_remove = len(video_files) - MAX_DATA_FILES
-        for i in range(files_to_remove):
-            file_to_delete = video_files[i]
-            try:
-                # Also remove from in-memory cache
-                video_id = file_to_delete.stem.replace("video_", "")
-                with _videos_lock:
-                    if video_id in _videos:
-                        del _videos[video_id]
-
-                file_to_delete.unlink()
-                logger.info("cleanup: removed old video file %s", file_to_delete.name)
-            except Exception as exc:
-                logger.warning(
-                    "cleanup: failed to remove %s: %s", file_to_delete.name, exc
-                )
+        expired = video_store.videos_to_expire(VIDEO_RETENTION_HOURS, MAX_VIDEOS_PER_USER)
     except Exception as exc:
-        logger.warning("cleanup: failed to clean old files: %s", exc)
+        logger.warning("cleanup: could not read video retention data: %s", exc)
+        return
+
+    for video_id, file_name in expired:
+        with _videos_lock:
+            _videos.pop(video_id, None)
+        try:
+            (DATA_DIR / file_name).unlink(missing_ok=True)
+            logger.info("cleanup: removed expired video %s", file_name)
+        except OSError as exc:
+            logger.warning("cleanup: failed to remove %s: %s", file_name, exc)
+    video_store.forget_videos([video_id for video_id, _ in expired])
+
+    now = time.time()
+    known = video_store.known_video_ids()
+    for path in DATA_DIR.iterdir():
+        try:
+            age = now - path.stat().st_mtime
+            if path.name.startswith("upload_") and path.suffix == ".part":
+                stale = age > UPLOAD_PART_MAX_AGE_SECONDS
+            elif path.name.startswith("video_") and path.suffix.lower() in {".mp4", ".mkv"}:
+                # Files nobody owns (from before ownership existed, or left by
+                # a crash) follow the same age limit.
+                stale = path.stem.removeprefix("video_") not in known and (
+                    age > VIDEO_RETENTION_HOURS * 3600
+                )
+            else:
+                continue
+            if stale:
+                path.unlink(missing_ok=True)
+                logger.info("cleanup: removed stale file %s", path.name)
+        except OSError:
+            continue
+
+    with _videos_lock:
+        for upload_id, (_, last_part_at) in list(_uploads.items()):
+            if now - last_part_at > UPLOAD_PART_MAX_AGE_SECONDS:
+                del _uploads[upload_id]
+
+
+def _get_owned_entry(video_id: str, user: dict[str, Any]) -> VideoEntry:
+    """Return the video if *user* owns it.
+
+    Someone else's video gets the same 404 as a missing one, so ids cannot
+    be probed.
+    """
+    if video_store.get_owner(video_id) != user.get("id"):
+        raise HTTPException(status_code=404, detail="Vídeo não encontrado")
+    with _videos_lock:
+        entry = _videos.get(video_id) or _restore_video_entry_if_missing(video_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Vídeo não encontrado")
+    return entry
 
 
 def _restore_video_entry_if_missing(video_id: str) -> VideoEntry | None:
@@ -1830,13 +1872,61 @@ async def upload_video(
             pass
 
     # For very large videos, we keep the original locally and only send a short clip to Gemini on demand.
+    video_store.register_video(video_id, user["id"], target_path.name)
     with _videos_lock:
         _videos[video_id] = VideoEntry(path=target_path, status="ready")
 
-    # Cleanup old files to stay within MAX_DATA_FILES limit
-    _cleanup_old_files()
+    await _run_blocking(_cleanup_videos)
 
     return {"video_id": video_id, "status": "ready"}
+
+
+_UPLOAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def _uploaded_parts_size(upload_id: str, skip_index: int) -> int:
+    """Total size of the parts already on disk for *upload_id* (blocking)."""
+    total = 0
+    for part in DATA_DIR.glob(f"upload_{upload_id}_*.part"):
+        if part.name != f"upload_{upload_id}_{skip_index}.part":
+            total += part.stat().st_size
+    return total
+
+
+def _merge_upload_if_complete(
+    upload_id: str, total_chunks: int, ext: str
+) -> tuple[str, Path] | None:
+    """Join the parts into a video once all of them arrived (blocking).
+
+    Returns (video_id, path) of the merged file, or None while parts are
+    still missing.
+    """
+    parts = [DATA_DIR / f"upload_{upload_id}_{i}.part" for i in range(total_chunks)]
+    if not all(part.exists() for part in parts):
+        return None
+    video_id = uuid.uuid4().hex
+    final_path = DATA_DIR / f"video_{video_id}{ext}"
+    try:
+        with final_path.open("wb") as out:
+            for part in parts:
+                with part.open("rb") as src:
+                    shutil.copyfileobj(src, out, 1024 * 1024)
+    except Exception:
+        final_path.unlink(missing_ok=True)
+        raise
+    for part in parts:
+        part.unlink(missing_ok=True)
+    return video_id, final_path
+
+
+def _too_large() -> HTTPException:
+    return HTTPException(
+        status_code=413,
+        detail=(
+            f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
+            "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
+        ),
+    )
 
 
 @app.post("/videos/raw")
@@ -1849,25 +1939,33 @@ async def upload_video_raw(
     x_chunk_index: str | None = Header(default=None, alias="X-Chunk-Index"),
     x_total_chunks: str | None = Header(default=None, alias="X-Total-Chunks"),
 ):
+    """Receive a video as a raw body, whole or in sequential chunks.
+
+    A chunked upload sends X-Upload-Id (a UUID), X-Chunk-Index and
+    X-Total-Chunks. Chunk 0 comes first and charges the upload; the upload
+    then belongs to that user, and parts from anyone else are refused.
+    """
     is_chunked = (
         x_upload_id is not None
         and x_chunk_index is not None
         and x_total_chunks is not None
     )
 
-    _billing_user_id = None
+    upload_id = ""
+    chunk_index = total_chunks = 0
     if is_chunked:
-        import re
-        if not re.match(r"^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$", x_upload_id, re.IGNORECASE):
+        upload_id = x_upload_id.strip().lower()
+        if not _UPLOAD_ID_RE.fullmatch(upload_id):
             raise HTTPException(status_code=400, detail="Invalid X-Upload-Id format")
         try:
             chunk_index = int(x_chunk_index)
             total_chunks = int(x_total_chunks)
         except ValueError:
             raise HTTPException(status_code=400, detail="X-Chunk-Index and X-Total-Chunks must be integers") from None
-        
         if chunk_index < 0 or total_chunks <= 0 or chunk_index >= total_chunks:
             raise HTTPException(status_code=400, detail="Invalid chunk range parameters")
+        if total_chunks > MAX_UPLOAD_CHUNKS:
+            raise HTTPException(status_code=400, detail="Upload dividido em partes demais")
 
     # Validate before charging: a rejected request must not cost credits, and
     # a debit followed by a refund would only add noise to the ledger.
@@ -1878,55 +1976,49 @@ async def upload_video_raw(
             status_code=400, detail="Formato inválido. Use .mp4 ou .mkv"
         )
 
+    if is_chunked:
+        with _videos_lock:
+            current = _uploads.get(upload_id)
+            if current and current[0] != user["id"]:
+                raise HTTPException(status_code=409, detail="Upload pertence a outro usuário")
+            if chunk_index > 0 and not current:
+                raise HTTPException(
+                    status_code=409, detail="Upload desconhecido ou expirado. Envie o vídeo de novo."
+                )
+            _uploads[upload_id] = (user["id"], time.time())
+
     # Chunked uploads are charged once, on the first chunk.
+    _billing_user_id = None
     if not is_chunked or chunk_index == 0:
         _billing_user_id = _debit_user_credits(user, "/videos/raw")
 
     if is_chunked:
-        chunk_target_path = DATA_DIR / f"upload_{x_upload_id}_{chunk_index}.part"
-        target_path = chunk_target_path
+        target_path = DATA_DIR / f"upload_{upload_id}_{chunk_index}.part"
+        previous_size = await _run_blocking(_uploaded_parts_size, upload_id, chunk_index)
     else:
         video_id = uuid.uuid4().hex
         target_path = DATA_DIR / f"video_{video_id}{ext}"
+        previous_size = 0
 
     total = 0
     try:
-        previous_size = 0
-        if is_chunked:
-            for idx in range(chunk_index):
-                part_path = DATA_DIR / f"upload_{x_upload_id}_{idx}.part"
-                if part_path.exists():
-                    previous_size += part_path.stat().st_size
-            if previous_size > MAX_VIDEO_BYTES:
-                raise HTTPException(
-                    status_code=413,
-                    detail=(
-                        f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
-                        "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
-                    ),
-                )
-
+        if previous_size > MAX_VIDEO_BYTES:
+            raise _too_large()
         with target_path.open("wb") as f:
             async for chunk in request.stream():
                 if not chunk:
                     continue
                 total += len(chunk)
                 if (previous_size + total) > MAX_VIDEO_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=(
-                            f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
-                            "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
-                        ),
-                    )
+                    raise _too_large()
                 f.write(chunk)
     except HTTPException:
-        if _billing_user_id:
-            _refund_user_credits(_billing_user_id, "/videos/raw")
+        _refund_user_credits(_billing_user_id, "/videos/raw")
+        target_path.unlink(missing_ok=True)
         raise
     except OSError as exc:
-        if _billing_user_id:
-            _refund_user_credits(_billing_user_id, "/videos/raw")
+        _refund_user_credits(_billing_user_id, "/videos/raw")
+        target_path.unlink(missing_ok=True)
         if getattr(exc, "errno", None) == ENOSPC:
             logger.error(
                 "disk full while saving raw upload to %s", target_path, exc_info=True
@@ -1943,84 +2035,58 @@ async def upload_video_raw(
         )
         raise
     except Exception as exc:
-        if _billing_user_id:
-            _refund_user_credits(_billing_user_id, "/videos/raw")
+        _refund_user_credits(_billing_user_id, "/videos/raw")
+        target_path.unlink(missing_ok=True)
         logger.warning("raw upload stream failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=400, detail="Falha ao ler o upload (conexão interrompida?)"
         ) from exc
 
-    if is_chunked:
-        # Check if all chunks have been received
-        all_parts_exist = True
-        for idx in range(total_chunks):
-            if idx == chunk_index:
-                continue
-            part_path = DATA_DIR / f"upload_{x_upload_id}_{idx}.part"
-            if not part_path.exists():
-                all_parts_exist = False
-                break
-        
-        if all_parts_exist:
-            final_video_id = uuid.uuid4().hex
-            final_target_path = DATA_DIR / f"video_{final_video_id}{ext}"
-            
-            try:
-                with final_target_path.open("wb") as outfile:
-                    for idx in range(total_chunks):
-                        part_path = chunk_target_path if idx == chunk_index else DATA_DIR / f"upload_{x_upload_id}_{idx}.part"
-                        with part_path.open("rb") as infile:
-                            while True:
-                                data = infile.read(64 * 1024)
-                                if not data:
-                                    break
-                                outfile.write(data)
-                
-                # Cleanup part files
-                for idx in range(total_chunks):
-                    part_path = DATA_DIR / f"upload_{x_upload_id}_{idx}.part"
-                    try:
-                        part_path.unlink(missing_ok=True)
-                    except Exception as e:
-                        logger.warning("Failed to delete chunk part file %s: %s", part_path, e)
-            except Exception as exc:
-                if final_target_path.exists():
-                    final_target_path.unlink(missing_ok=True)
-                if _billing_user_id:
-                    _refund_user_credits(_billing_user_id, "/videos/raw")
-                logger.error("Failed to merge chunk parts for upload %s: %s", x_upload_id, exc, exc_info=True)
-                raise HTTPException(
-                    status_code=500, detail="Falha ao juntar as partes do upload"
-                ) from exc
-            
-            with _videos_lock:
-                _videos[final_video_id] = VideoEntry(path=final_target_path, status="ready")
-
-            _cleanup_old_files()
-            return {"video_id": final_video_id, "status": "ready"}
-        else:
-            return {"status": "uploading", "chunk_index": chunk_index}
-    else:
+    if not is_chunked:
+        video_store.register_video(video_id, user["id"], target_path.name)
         with _videos_lock:
             _videos[video_id] = VideoEntry(path=target_path, status="ready")
-
-        _cleanup_old_files()
+        await _run_blocking(_cleanup_videos)
         return {"video_id": video_id, "status": "ready"}
+
+    try:
+        merged = await _run_blocking(_merge_upload_if_complete, upload_id, total_chunks, ext)
+    except Exception as exc:
+        # The charge was made on chunk 0, in another request: refund the
+        # owner directly (admins were never charged).
+        _refund_user_credits(None if user.get("role") == "admin" else user["id"], "/videos/raw")
+        logger.error("Failed to merge chunk parts for upload %s: %s", upload_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=500, detail="Falha ao juntar as partes do upload"
+        ) from exc
+    if merged is None:
+        return {"status": "uploading", "chunk_index": chunk_index}
+
+    final_video_id, final_path = merged
+    video_store.register_video(final_video_id, user["id"], final_path.name)
+    with _videos_lock:
+        _videos[final_video_id] = VideoEntry(path=final_path, status="ready")
+        _uploads.pop(upload_id, None)
+    await _run_blocking(_cleanup_videos)
+    return {"video_id": final_video_id, "status": "ready"}
 
 
 @app.get("/videos/{video_id}/status")
 def video_status(video_id: str, user: CurrentAuthorizedUser):
-    with _videos_lock:
-        entry = _videos.get(video_id)
-        if not entry:
-            entry = _restore_video_entry_if_missing(video_id)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Vídeo não encontrado")
-        return {"status": entry.status, "error": entry.error}
+    entry = _get_owned_entry(video_id, user)
+    payload: dict[str, Any] = {"status": entry.status, "error": entry.error}
+    if entry.status == "ready":
+        # The <video> element cannot send the Authorization header: it gets a
+        # short-lived URL signed for this video and its owner instead.
+        token = video_store.sign_file_token(video_id, user["id"])
+        payload["file_url"] = f"/videos/{video_id}/file?token={token}"
+    return payload
 
 
 @app.get("/videos/{video_id}/file")
-def video_file(video_id: str):
+def video_file(video_id: str, token: str = ""):
+    if not video_store.verify_file_token(video_id, token):
+        raise HTTPException(status_code=404, detail="Vídeo não encontrado")
     with _videos_lock:
         entry = _videos.get(video_id)
         if not entry:
@@ -2080,6 +2146,7 @@ async def upload_youtube(
     video_id = uuid.uuid4().hex
     target_path = DATA_DIR / f"video_{video_id}.mp4"
 
+    video_store.register_video(video_id, user["id"], target_path.name)
     with _videos_lock:
         _videos[video_id] = VideoEntry(path=target_path, status="processing")
 
@@ -2091,8 +2158,7 @@ async def upload_youtube(
                 if current:
                     current.status = "ready"
                     current.error = None
-            # Cleanup old files to stay within MAX_DATA_FILES limit
-            _cleanup_old_files()
+            _cleanup_videos()
         except HTTPException as exc:
             _refund_user_credits(_billing_user_id, "/videos/youtube")
             with _videos_lock:
@@ -2133,17 +2199,12 @@ async def smart_text(
         # Legacy aliases (retrocompatibilidade)
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
     ):
-    with _videos_lock:
-        entry = _videos.get(video_id)
-        if not entry:
-            entry = _restore_video_entry_if_missing(video_id)
-        if not entry:
-            raise HTTPException(status_code=404, detail="Vídeo não encontrado")
-        if entry.status != "ready":
-            raise HTTPException(
-                status_code=409, detail=entry.error or "Vídeo não está pronto"
-            )
-        source_path = entry.path
+    entry = _get_owned_entry(video_id, user)
+    if entry.status != "ready":
+        raise HTTPException(
+            status_code=409, detail=entry.error or "Vídeo não está pronto"
+        )
+    source_path = entry.path
 
     gemini_header = x_gemini_key or x_google_api_key
     if timestamp is None:

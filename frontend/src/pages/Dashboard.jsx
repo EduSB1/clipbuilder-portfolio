@@ -650,7 +650,9 @@ export default function Dashboard() {
                     if (status === "ready") {
                         clearInterval(youtubePollRef.current);
                         youtubePollRef.current = null;
-                        setVideoUrl(`${base}/videos/${id}/file`);
+                        // URL assinada pelo backend: o <video> não envia o
+                        // header Authorization, então o token vai na própria URL.
+                        setVideoUrl(`${base}${statusResponse.data.file_url}`);
                         setAiStatus("ready");
                         setYoutubeImporting(false);
                     } else if (status === "error") {

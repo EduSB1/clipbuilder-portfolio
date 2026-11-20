@@ -121,9 +121,6 @@ DASHBOARD_CHART_DAYS = 30
 # Clerk sync
 CLERK_SYNC_USER_LIMIT = 100
 
-# Data files
-DEFAULT_MAX_DATA_FILES = 5
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BILLING & CREDITS
