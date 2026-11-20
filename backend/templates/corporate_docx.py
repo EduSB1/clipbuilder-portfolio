@@ -132,12 +132,10 @@ def _resolve_image(image_map: dict | None, key: str) -> tuple[bytes | None, str 
             except Exception:
                 return None, "bad base64"
         try:
-            return base64.b64decode(value), None
+            return base64.b64decode(value, validate=True), None
         except Exception:
             pass
-        p = Path(value)
-        if p.exists():
-            return p.read_bytes(), None
+        # Never read a file path from image_map: it comes from the request.
     return None, "unresolvable"
 
 
@@ -1014,13 +1012,8 @@ def corporate_markdown_to_docx(
             if img_bytes is None and image_map and alt_text:
                 img_bytes, _ = _resolve_image(image_map, alt_text)
 
-            if img_bytes is None and img_url and not img_url.startswith("data:"):
-                path = Path(img_url)
-                if path.exists():
-                    try:
-                        img_bytes = path.read_bytes()
-                    except Exception:
-                        pass
+            # Any other ![alt](url) is not read: the markdown comes from the
+            # user, and a path here used to be read from the server's disk.
 
             if img_bytes and _validate_image_bytes(img_bytes):
                 try:
