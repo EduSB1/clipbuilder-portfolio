@@ -170,8 +170,10 @@ reproduce the demonstrated workflow.
 # ---------------------------------------------------------------------------
 
 # Default model aligned with system settings seed ("models/gemini-2.5-flash").
-# The google-gla: prefix is PydanticAI's provider identifier for Google AI.
-_DEFAULT_MODEL: str = "google-gla:gemini-2.5-flash"
+# The google: prefix is PydanticAI's provider for the Gemini API (API key, read
+# from GOOGLE_API_KEY or GEMINI_API_KEY). PydanticAI 2.x dropped the old
+# google-gla: name.
+_DEFAULT_MODEL: str = "google:gemini-2.5-flash"
 
 
 def _resolve_model() -> str:
@@ -180,7 +182,7 @@ def _resolve_model() -> str:
     Priority:
       1. ``CLIPBUILDER_AGENT_MODEL`` env var (e.g. ``openai:gpt-4o``).
       2. If ``OPENAI_API_KEY`` is set  → ``openai:gpt-4o``.
-      3. Default → ``google-gla:gemini-2.5-flash``.
+      3. Default → ``google:gemini-2.5-flash``.
     """
     explicit = (os.getenv("CLIPBUILDER_AGENT_MODEL") or "").strip()
     if explicit:
@@ -200,7 +202,7 @@ def _resolve_model() -> str:
 # via agent.override(model=...) inside extract_steps().
 step_extractor_agent: Agent[StepExtractionDeps, StepListOutput] = Agent(
     model=_resolve_model(),
-    result_type=StepListOutput,
+    output_type=StepListOutput,
     system_prompt=_SYSTEM_PROMPT,
     deps_type=StepExtractionDeps,
     retries=2,
@@ -316,6 +318,6 @@ async def extract_steps(
     # parameter is positional-only in the PydanticAI public API.
     result = await agent.run(user_prompt, deps=deps)
 
-    steps: list[StepOutput] = result.data.steps
+    steps: list[StepOutput] = result.output.steps
     logger.info("Extracted %d steps from source material.", len(steps))
     return steps

@@ -15,12 +15,34 @@ Exemplos:
 
 ## Rodar localmente
 
+Python 3.12, a mesma versão da imagem Docker e do CI.
+
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn main:app --reload --port 8000
 ```
+
+## Dependências
+
+As versões ficam travadas, com hash, em arquivos gerados pelo [uv](https://docs.astral.sh/uv/):
+
+| Arquivo | Conteúdo |
+|---|---|
+| `requirements.in` | dependências de produção declaradas (edite este) |
+| `requirements.txt` | lock de produção, usado pelo Dockerfile |
+| `requirements-dev.in` | ferramentas de teste e lint (edite este) |
+| `requirements-dev.txt` | lock de produção + desenvolvimento, usado pelo CI |
+
+Depois de editar um `.in`, regenere os locks na mesma ordem:
+
+```bash
+uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes -o requirements.txt
+uv pip compile requirements-dev.in --universal --python-version 3.12 --generate-hashes -o requirements-dev.txt
+```
+
+Exceção deliberada: o `yt-dlp` está no lock, mas o Dockerfile o atualiza em seguida para a versão mais recente, junto com os plugins anti-bot, porque o YouTube muda as proteções com frequência.
 
 - Health check: http://localhost:8000/health
 - Export: `POST /export` (multipart: `steps` JSON + `images[]`)

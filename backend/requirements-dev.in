@@ -1,0 +1,8 @@
+# Dependências de desenvolvimento e CI (não vão para a imagem de produção).
+# As versões de produção ficam travadas pelo lock de requirements.txt.
+-r requirements.in
+-c requirements.txt
+
+pytest>=8.0
+pytest-asyncio>=0.24
+ruff>=0.7

@@ -65,7 +65,7 @@ class ExtractStepsRequest(BaseModel):
         default=None,
         description=(
             "Optional model identifier that overrides the default "
-            "(e.g. 'openai:gpt-4o' or 'google-gla:gemini-1.5-flash')."
+            "(e.g. 'openai:gpt-4o' or 'google:gemini-2.5-flash')."
         ),
     )
 
