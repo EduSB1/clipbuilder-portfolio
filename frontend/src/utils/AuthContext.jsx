@@ -14,6 +14,7 @@ import {
 } from "react";
 import { useUser, useAuth, useClerk } from "@clerk/clerk-react";
 import { api, setupClerkToken } from "./api";
+import { clearDashboardCache } from "./sessionCache";
 
 const SYS_TOKEN_KEY = "__sys_token";
 
@@ -96,6 +97,9 @@ function JwtOnlyAuthProvider({ children }) {
   }, [refreshProfile]);
 
   const signOut = useCallback(async () => {
+    // Frames e vídeo ficam no IndexedDB: sem isso, o próximo usuário do
+    // mesmo navegador veria o trabalho de quem saiu.
+    await clearDashboardCache({ suspendSaves: true }).catch(() => {});
     clearSysToken();
     setBackendUser(null);
     try {
@@ -274,6 +278,9 @@ function ClerkBackedAuthProvider({ children }) {
   }, [clerkLoaded, refreshProfile, backendLoaded]);
 
   const signOut = useCallback(async () => {
+    // Frames e vídeo ficam no IndexedDB: sem isso, o próximo usuário do
+    // mesmo navegador veria o trabalho de quem saiu.
+    await clearDashboardCache({ suspendSaves: true }).catch(() => {});
     if (clerkSignedIn) {
       await clerkSignOut();
     }
@@ -330,17 +337,10 @@ function ClerkBackedAuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-function _isClerkDisabled() {
-  try {
-    return localStorage.getItem("CLIPBUILDER_DISABLE_CLERK") === "1";
-  } catch {
-    return false;
-  }
-}
-
+// O modo de login é decidido no build (chave do Clerk presente ou não), nunca
+// por um valor que o próprio usuário possa gravar no navegador.
 export function AppAuthProvider({ children }) {
-  const clerkEnabled =
-    !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && !_isClerkDisabled();
+  const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   if (clerkEnabled) {
     return <ClerkBackedAuthProvider>{children}</ClerkBackedAuthProvider>;
   }

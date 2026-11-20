@@ -103,5 +103,8 @@ jobs:
           context: .
           file: ./frontend/Dockerfile
           push: false
+          # O CI só verifica que a imagem constrói; não há chave do Clerk aqui.
+          build-args: |
+            REQUIRE_CLERK_KEY=false
           cache-from: type=gha
           cache-to: type=gha,mode=max

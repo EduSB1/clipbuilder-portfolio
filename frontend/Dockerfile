@@ -14,9 +14,16 @@ COPY frontend/ ./
 
 # ── Variáveis de build do Vite ────────────────────────────────────────────────
 # Precisam existir em build-time: o Vite as inlineia no bundle.
-# Chave publicável do Clerk (opcional — sem ela o app usa o JWT local).
+# Chave publicável do Clerk. Sem ela o app cai no login local de emergência,
+# então o build de produção falha em vez de gerar esse frontend em silêncio.
+# O perfil de desenvolvimento e o CI passam REQUIRE_CLERK_KEY=false.
 ARG VITE_CLERK_PUBLISHABLE_KEY=""
 ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
+ARG REQUIRE_CLERK_KEY=true
+RUN if [ "$REQUIRE_CLERK_KEY" = "true" ] && [ -z "$VITE_CLERK_PUBLISHABLE_KEY" ]; then \
+      echo "VITE_CLERK_PUBLISHABLE_KEY não definida (defina no .env ou passe REQUIRE_CLERK_KEY=false)" >&2; \
+      exit 1; \
+    fi
 
 # Public key do Mercado Pago (tokenização de cartão).
 ARG VITE_MP_PUBLIC_KEY=""

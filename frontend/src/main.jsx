@@ -19,14 +19,6 @@ if (DEV) {
   );
 }
 
-function isClerkDisabled() {
-  try {
-    return localStorage.getItem("CLIPBUILDER_DISABLE_CLERK") === "1";
-  } catch {
-    return false;
-  }
-}
-
 const rootElement = document.getElementById("root");
 if (DEV) console.log("ClipBuilder: rootElement found =", !!rootElement);
 
@@ -39,7 +31,7 @@ if (!rootElement) {
         <React.StrictMode>
             <ErrorBoundary>
                 <BrowserRouter>
-                    {CLERK_PUBLISHABLE_KEY && !isClerkDisabled() ? (
+                    {CLERK_PUBLISHABLE_KEY ? (
                         <ClerkProvider
                             publishableKey={CLERK_PUBLISHABLE_KEY}
                             localization={ptBR}

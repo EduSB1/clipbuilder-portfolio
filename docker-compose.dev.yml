@@ -19,6 +19,8 @@ services:
         build:
             args:
                 NGINX_CONF: nginx.dev.conf
+                # Em dev o app pode rodar sem Clerk (login local).
+                REQUIRE_CLERK_KEY: "false"
         # !override substitui as portas 80/443 de produção em vez de somá-las.
         ports: !override
             - "127.0.0.1:8080:80"

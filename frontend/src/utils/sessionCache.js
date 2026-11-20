@@ -163,7 +163,13 @@ function serializeStep(step) {
  *
  * @param {object} state - Estado do Dashboard
  */
+// Depois do logout nada pode ser regravado: o Dashboard salva o estado ao
+// desmontar, e isso acontece logo após o signOut. A próxima restauração (novo
+// login) reativa os salvamentos.
+let savesSuspended = false;
+
 export async function saveDashboardCache(state) {
+  if (savesSuspended) return;
   const {
     videoUrl,
     videoId,
@@ -236,8 +242,15 @@ export async function saveDashboardCache(state) {
  * @returns {Promise<object|null>} Estado parcial para hidratar o Dashboard
  */
 export async function restoreDashboardCache() {
+  savesSuspended = false;
   const hasCache = ssGet("hasCache");
-  if (!hasCache) return null;
+  if (!hasCache) {
+    // Sem os metadados desta aba, blobs no IndexedDB são sobras de outra
+    // sessão (talvez de outra pessoa): não podem ser restaurados, só apagados.
+    await idbClear(IDB_STORE_BLOBS).catch(() => {});
+    await idbClear(IDB_STORE_VIDEO).catch(() => {});
+    return null;
+  }
 
   const videoId = ssGet("videoId");
   const youtubeUrl = ssGet("youtubeUrl");
@@ -337,8 +350,12 @@ export function hasDashboardCache() {
 
 /**
  * Limpa todo o cache do Dashboard (sessionStorage + IndexedDB).
+ *
+ * @param {{ suspendSaves?: boolean }} [options] - suspendSaves: true no
+ *   logout, para que nada seja regravado até o próximo login.
  */
-export async function clearDashboardCache() {
+export async function clearDashboardCache({ suspendSaves = false } = {}) {
+  if (suspendSaves) savesSuspended = true;
   // Limpar sessionStorage
   const keysToRemove = [
     "videoId",
@@ -371,6 +388,7 @@ export async function clearDashboardCache() {
  * @param {Array} steps
  */
 export async function cacheSteps(steps) {
+  if (savesSuspended) return;
   const stepsMeta = (steps || []).map(serializeStep);
   ssSet("steps", stepsMeta);
 

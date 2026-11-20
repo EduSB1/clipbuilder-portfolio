@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { X, Download, Copy, Check, FileText, AlertCircle } from "lucide-react";
+import DOMPurify from "dompurify";
 import { marked } from "marked";
 import {
     downloadMarkdownAsDocx,
@@ -317,6 +318,18 @@ function MarkdownEditor({ value, onChange, isEditable }) {
     );
 }
 
+// O padrão do DOMPurify mais blob:, que é como as capturas dos passos chegam.
+const PREVIEW_URI_REGEXP =
+    /^(?:(?:(?:f|ht)tps?|mailto|tel|blob):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i;
+
+function escapeAttr(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+}
+
 function WordPreview({ markdown, steps }) {
     const hasContent = Boolean(markdown?.trim());
 
@@ -327,7 +340,9 @@ function WordPreview({ markdown, steps }) {
             if (typeof markdown !== "string") return "";
 
             const renderer = new marked.Renderer();
-            renderer.image = (href, title, text) => {
+            // marked 15 entrega um token ({ href, title, text }); a assinatura
+            // antiga (href, title, text) fazia toda imagem sumir do preview.
+            renderer.image = ({ href, title, text }) => {
                 try {
                     let src = href || "";
                     // Try to resolve step image from blob
@@ -339,14 +354,20 @@ function WordPreview({ markdown, steps }) {
                             src = step.url;
                         }
                     }
-                    return `<img src="${src}" alt="${text || ""}" title="${title || ""}" style="max-width:100%; height:auto;" />`;
+                    return `<img src="${escapeAttr(src)}" alt="${escapeAttr(text)}" title="${escapeAttr(title)}" style="max-width:100%; height:auto;" />`;
                 } catch {
                     return "";
                 }
             };
 
-            // marked v12+ safety
-            return marked.parse(markdown, { renderer, async: false });
+            // O marked não sanitiza, e o markdown vem da IA a partir do vídeo
+            // do usuário (ou de um link do YouTube): um <img onerror> ou
+            // <script> no texto rodaria com a sessão de quem abre o preview.
+            const html = marked.parse(markdown, { renderer, async: false });
+            return DOMPurify.sanitize(html, {
+                ALLOWED_URI_REGEXP: PREVIEW_URI_REGEXP,
+                FORBID_TAGS: ["style", "form", "input", "button"],
+            });
         } catch (e) {
             console.error(e);
             throw new Error("Erro ao processar Markdown: " + e.message);
