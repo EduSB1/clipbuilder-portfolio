@@ -596,6 +596,24 @@ def _cleanup_videos() -> None:
                 del _uploads[upload_id]
 
 
+# YouTube imports: each one may try up to ten download strategies of up to
+# ten minutes, holding a worker thread the whole time.
+_YOUTUBE_DOWNLOAD_SLOTS = threading.BoundedSemaphore(
+    max(1, _env_int("CLIPBUILDER_YOUTUBE_CONCURRENCY", 2))
+)
+# user id -> imports in progress; guarded by _videos_lock.
+_youtube_active: dict[str, int] = {}
+
+
+def _release_youtube_slot(user_id: str) -> None:
+    with _videos_lock:
+        remaining = _youtube_active.get(user_id, 0) - 1
+        if remaining > 0:
+            _youtube_active[user_id] = remaining
+        else:
+            _youtube_active.pop(user_id, None)
+
+
 def _get_owned_entry(video_id: str, user: dict[str, Any]) -> VideoEntry:
     """Return the video if *user* owns it.
 
@@ -771,7 +789,10 @@ def _is_supported_youtube_url(url: str) -> bool:
         return False
     if parsed.scheme not in {"http", "https"}:
         return False
-    host = (parsed.netloc or "").lower()
+    # hostname, not netloc: netloc also carries user:password@ and :port.
+    host = (parsed.hostname or "").lower()
+    if parsed.username or parsed.password:
+        return False
     if host.startswith("www."):
         host = host[4:]
     return host in {"youtube.com", "m.youtube.com", "youtu.be"} or host.endswith(
@@ -783,6 +804,10 @@ def _ytdlp_cmd() -> list[str]:
     # Prefer binary if available, otherwise fall back to python module.
     base = ["yt-dlp"] if shutil.which("yt-dlp") else [sys.executable, "-m", "yt_dlp"]
     return base + [
+        # Only the YouTube extractor: without this, any URL that reached
+        # yt-dlp could be fetched by its generic extractor (SSRF).
+        "--use-extractors",
+        "youtube",
         "--no-playlist",
         "--no-warnings",
         "--max-filesize",
@@ -890,6 +915,27 @@ def _ytdlp_android_client_args() -> list[str]:
         "--extractor-args",
         "youtube:player_client=android",
     ]
+
+
+_URL_CREDENTIALS_RE = re.compile(r"(\w+://)[^/\s:@]+:[^/\s@]+@")
+
+
+def _redact_url_credentials(text: str) -> str:
+    """Mask user:password@ in any URL inside *text* (yt-dlp errors echo the proxy)."""
+    return _URL_CREDENTIALS_RE.sub(r"\1***@", text)
+
+
+def _redact_ytdlp_cmd(cmd: list[str]) -> list[str]:
+    """Copy of *cmd* safe for logs: proxy credentials are masked."""
+    redacted = list(cmd)
+    for i, arg in enumerate(redacted[:-1]):
+        if arg == "--proxy":
+            parsed = urlparse(redacted[i + 1])
+            if parsed.username or parsed.password:
+                host = parsed.hostname or ""
+                port = f":{parsed.port}" if parsed.port else ""
+                redacted[i + 1] = f"{parsed.scheme}://***@{host}{port}"
+    return redacted
 
 
 def _ytdlp_proxy_args() -> list[str]:
@@ -1095,8 +1141,9 @@ def _download_youtube_video(*, url: str, out_path: Path) -> None:
             except Exception:
                 pass
 
-        cmd = base_cmd[:-1] + extra_args + [base_cmd[-1]]  # insert before url
-        logger.info("yt-dlp strategy=%s cmd=%s", label, cmd)
+        # "--" ends the options: the URL can never be read as a flag.
+        cmd = base_cmd[:-1] + extra_args + ["--", base_cmd[-1]]
+        logger.info("yt-dlp strategy=%s cmd=%s", label, _redact_ytdlp_cmd(cmd))
         proc = _run_ytdlp(cmd)
 
         if proc.returncode == 0:
@@ -1105,7 +1152,9 @@ def _download_youtube_video(*, url: str, out_path: Path) -> None:
 
         stderr = (proc.stderr or "").strip()
         stdout = (proc.stdout or "").strip()
-        last_tail = "\n".join((stderr.splitlines() + stdout.splitlines())[-20:]).strip()
+        last_tail = _redact_url_credentials(
+            "\n".join((stderr.splitlines() + stdout.splitlines())[-20:]).strip()
+        )
         logger.warning(
             "yt-dlp strategy=%s failed (rc=%d): %s", label, proc.returncode, last_tail
         )
@@ -2140,8 +2189,21 @@ async def upload_youtube(
     # does not require the Gemini key.  The key will be validated later when
     # the user actually requests AI processing (e.g. /smart-text).
 
-    # Charged only after the URL is validated; refunded if the download fails.
-    _billing_user_id = _debit_user_credits(user, "/videos/youtube")
+    # One import at a time per user, checked before charging.
+    with _videos_lock:
+        if _youtube_active.get(user["id"], 0) >= 1:
+            raise HTTPException(
+                status_code=429,
+                detail="Já existe uma importação do YouTube em andamento. Aguarde ela terminar.",
+            )
+        _youtube_active[user["id"]] = _youtube_active.get(user["id"], 0) + 1
+
+    try:
+        # Charged only after the URL is validated; refunded if the download fails.
+        _billing_user_id = _debit_user_credits(user, "/videos/youtube")
+    except HTTPException:
+        _release_youtube_slot(user["id"])
+        raise
 
     video_id = uuid.uuid4().hex
     target_path = DATA_DIR / f"video_{video_id}.mp4"
@@ -2152,7 +2214,9 @@ async def upload_youtube(
 
     def job() -> None:
         try:
-            _download_youtube_video(url=url, out_path=target_path)
+            # Server-wide cap: extra imports wait here (still "processing").
+            with _YOUTUBE_DOWNLOAD_SLOTS:
+                _download_youtube_video(url=url, out_path=target_path)
             with _videos_lock:
                 current = _videos.get(video_id)
                 if current:
@@ -2172,13 +2236,16 @@ async def upload_youtube(
                 current = _videos.get(video_id)
                 if current:
                     current.status = "error"
-                    current.error = str(exc)
+                    # The technical detail (yt-dlp output) goes to the log only.
+                    current.error = "Falha ao baixar o vídeo do YouTube. Tente novamente mais tarde."
             logger.error(
                 "youtube download failed (video_id=%s): %s",
                 video_id,
                 exc,
                 exc_info=True,
             )
+        finally:
+            _release_youtube_slot(user["id"])
 
     background_tasks.add_task(job)
     return {"video_id": video_id, "status": "processing"}
