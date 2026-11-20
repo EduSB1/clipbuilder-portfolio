@@ -386,23 +386,3 @@ def get_usage_stats(
         "by_provider": by_provider,
         "recent_logs": recent,
     }
-
-
-def seed_admin(db: Session, email: str) -> User | None:
-    """Create admin user if not exists, or promote/activate if already exists."""
-    existing = get_user_by_email(db, email)
-    if existing:
-        changed = False
-        if existing.role != "admin":
-            existing.role = "admin"
-            changed = True
-        # Always ensure the admin account is active (not blocked by default False)
-        if not existing.is_active:
-            existing.is_active = True
-            changed = True
-        if changed:
-            db.commit()
-            db.refresh(existing)
-            return existing
-        return None
-    return create_user(db, email=email, full_name="Admin", role="admin")

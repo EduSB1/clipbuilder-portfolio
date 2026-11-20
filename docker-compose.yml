@@ -39,7 +39,7 @@ services:
             - ./.env
         environment:
             - DATABASE_URL=postgresql://clipbuilder:${DB_PASSWORD:?DB_PASSWORD is required}@db:5432/clipbuilder
-            - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@clipbuilder.com}
+            - ADMIN_EMAIL=${ADMIN_EMAIL:?ADMIN_EMAIL is required}
             - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
             - CLIPBUILDER_DATA_DIR=/app/data
             - CLIPBUILDER_LOG_DIR=/app/logs

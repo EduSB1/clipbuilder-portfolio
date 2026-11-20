@@ -113,7 +113,6 @@ def upsert_user(
             )
             return None
 
-        from app.core.config import settings
 
         changed = False
         if clerk_id and not user.clerk_id:
@@ -130,14 +129,10 @@ def upsert_user(
             user.full_name = full_name or ""
             changed = True
 
-        # Auto-activate the admin account if it is currently inactive.
-        # This handles the case where admin_email was configured after the
-        # user record was already created with is_active=False.
-        if not user.is_active and email_n == settings.admin_email.strip().lower():
-            user.is_active = True
-            user.role = "admin"
-            changed = True
-            logger.info("clerk_store: auto-activated admin account %s", email_n)
+        # No role or activation changes from Clerk payloads: the first admin
+        # comes from app/admin/bootstrap.py, the others from the admin panel.
+        # Promoting by ADMIN_EMAIL here re-activated an admin that had been
+        # deactivated on purpose, at every sync.
 
         if changed:
             user.updated_at = datetime.now(UTC)
@@ -147,16 +142,13 @@ def upsert_user(
         db.refresh(user)
         return user
 
-    from app.core.config import settings
-
-    # New user
-    is_admin = email_n == settings.admin_email.lower()
+    # New user: always a regular, inactive account until an admin approves it.
     user = crud.create_user(
         db,
         email=email_n,
         full_name=full_name or "",
         clerk_id=clerk_id or None,
-        role="admin" if is_admin else "user",
+        role="user",
     )
     return user
 

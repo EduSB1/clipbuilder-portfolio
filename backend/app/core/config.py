@@ -125,11 +125,13 @@ class Settings(BaseSettings):
     database_url: str
     """PostgreSQL connection string."""
 
-    # Admin seed
-    admin_email: str = "admin@clipbuilder.com"
-    """Email for initial admin user seed."""
+    # First admin (see app/admin/bootstrap.py)
+    admin_email: str = ""
+    """Account made admin on a fresh database. No default on purpose: the
+    old one (admin@clipbuilder.com) was a domain nobody here controls, and
+    whoever verified that mailbox in Clerk would have become admin."""
     admin_password: str
-    """Password for initial admin user seed (required)."""
+    """Local password of that first admin (emergency login), 12+ characters."""
 
     # SMTP
     smtp_host: str = "smtp.gmail.com"

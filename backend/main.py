@@ -394,6 +394,18 @@ async def _lifespan(app: FastAPI):
         except Exception as mExc:
             logger.warning("Migrations skipped: %s", mExc)
 
+        # First admin of a fresh installation (no-op once any admin exists)
+        try:
+            from app.admin.bootstrap import bootstrap_admin
+
+            with SessionLocal() as db:
+                outcome = bootstrap_admin(
+                    db, _app_settings.admin_email, _app_settings.admin_password
+                )
+            logger.info("Admin bootstrap: %s", outcome)
+        except Exception as admin_exc:
+            logger.error("Admin bootstrap failed: %s", admin_exc, exc_info=True)
+
         # Seed native AI tools
         try:
             from app.tools.service import seed_native_tools

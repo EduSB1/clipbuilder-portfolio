@@ -115,7 +115,7 @@ git clone https://github.com/<your-user>/clipbuilder.git
 cd clipbuilder
 
 cp .env.example .env && chmod 600 .env
-# required to start: DB_PASSWORD, SECRET_KEY and ADMIN_PASSWORD
+# required to start: DB_PASSWORD, SECRET_KEY, ADMIN_EMAIL and ADMIN_PASSWORD
 # generate each with: openssl rand -hex 32
 # GEMINI_API_KEY and the CLERK_* keys are needed for AI and for sign-in
 
@@ -127,9 +127,14 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
 This development setup serves plain HTTP on `127.0.0.1` only and does not start the certificate service. Every setting lives in `.env`; see that file for the annotated list.
 
-> **Known gap:** a fresh install starts with no users. `ADMIN_EMAIL` and
-> `ADMIN_PASSWORD` are read but do not create the admin account yet, so a new
-> installation cannot sign in out of the box. Fixing this is planned.
+**First admin.** On the first start, `ADMIN_EMAIL` becomes an active admin
+whose emergency-login password is `ADMIN_PASSWORD` (set `LOCAL_JWT_SECRET` to
+enable that login). Signing in through Clerk with the same, verified e-mail
+links to that account. Other admins are made in the admin panel or with:
+
+```bash
+docker compose exec backend python scripts/admin.py --help
+```
 
 ### Production
 
