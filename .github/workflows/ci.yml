@@ -7,6 +7,11 @@ on:
   pull_request:
   workflow_call: # permite que o deploy reutilize este workflow como gate
 
+# O token do workflow só lê o repositório. Actions de terceiros ficam presas
+# por SHA de commit (o comentário diz a versão): uma tag pode ser movida.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend (ruff + pytest)
@@ -32,9 +37,9 @@ jobs:
       # Sem banco os testes falham em vez de serem pulados em silêncio.
       CLIPBUILDER_REQUIRE_DB_TESTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           # Mesma versão da imagem de produção (python:3.12-slim).
           python-version: "3.12"
@@ -55,13 +60,19 @@ jobs:
         working-directory: backend
         run: pytest
 
+      - name: Vulnerabilidades conhecidas (pip-audit)
+        working-directory: backend
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --disable-pip --no-deps
+
   frontend:
     name: Frontend (eslint + build)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "20"
           cache: npm
@@ -79,18 +90,26 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # Informativo: os avisos restantes (fabric, react-router, zod, tar) só se
+      # resolvem com versões major e foram avaliados como fora do alcance do
+      # app em execução. Ver o histórico do commit que atualizou as dependências.
+      - name: Vulnerabilidades conhecidas (npm audit)
+        working-directory: frontend
+        continue-on-error: true
+        run: npm audit --omit=dev
+
   docker:
     name: Build das imagens Docker
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       # Só constrói — não publica. Pega Dockerfile quebrado antes do deploy,
       # que é exatamente o erro que derrubava o site.
       - name: Build do backend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./backend
           push: false
@@ -98,7 +117,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build do frontend
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./frontend/Dockerfile

@@ -5,6 +5,9 @@ on:
     branches: [auth/clerk]
   workflow_dispatch: # Permite rodar o deploy manualmente pelo GitHub
 
+permissions:
+  contents: read
+
 concurrency:
   # Dois deploys simultâneos na mesma VPS se atropelam (git reset + rebuild).
   group: deploy-production
@@ -20,13 +23,21 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_URL: https://clipbuilder.com.br
+      # `secrets` não pode ser usado no `if:` de um step (o workflow nem
+      # carregava); o teste passa por estas variáveis.
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
     steps:
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # SHA256 da chave pública do servidor (ssh-keyscan HOST | ssh-keygen -lf -).
+          # Sem ela, qualquer um no caminho poderia se passar pela VPS e receber
+          # o deploy.
+          fingerprint: ${{ secrets.SSH_HOST_FINGERPRINT }}
           script: |
             set -euo pipefail
 
@@ -76,11 +87,11 @@ jobs:
             docker image prune -f --filter "until=168h" || true
 
       - name: Purge Cloudflare cache
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ZONE_ID != '' }}
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ZONE_ID != '' }}
         run: |
           set -euo pipefail
-          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${{ secrets.CLOUDFLARE_ZONE_ID }}/purge_cache" \
-            -H "Authorization: Bearer ${{ secrets.CLOUDFLARE_API_TOKEN }}" \
+          curl -fsS -X POST "https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/purge_cache" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
             -H "Content-Type: application/json" \
             --data '{"purge_everything":true}' >/dev/null
 
