@@ -1,0 +1,26 @@
+# Desenvolvimento local: a stack completa em HTTP, sem domínio nem certificado.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# - App:     http://localhost:8080
+# - API:     http://localhost:8000/docs
+# - Postgres continua acessível só pela rede interna do Compose.
+# - Portas presas a 127.0.0.1: nada fica exposto na rede local.
+# - O certbot (renovação de certificado) não sobe neste perfil.
+
+services:
+    backend:
+        ports:
+            - "127.0.0.1:8000:8000"
+
+    frontend:
+        build:
+            args:
+                NGINX_CONF: nginx.dev.conf
+        # !override substitui as portas 80/443 de produção em vez de somá-las.
+        ports: !override
+            - "127.0.0.1:8080:80"
+
+    certbot:
+        # Só sobe se o perfil for pedido explicitamente; em dev, nunca.
+        profiles: ["producao"]

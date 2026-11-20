@@ -1,5 +1,5 @@
 .git
-.venv
+**/.venv
 .venv.broken-*
 **/__pycache__
 **/*.pyc
@@ -17,3 +17,8 @@ backend/logs
 # Env
 **/.env
 .DS_Store
+
+# Ferramentas locais de agente (não fazem parte do produto)
+.agents
+.claude
+skills-lock.json

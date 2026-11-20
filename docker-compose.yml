@@ -43,7 +43,6 @@ services:
             - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
             - CLIPBUILDER_DATA_DIR=/app/data
             - CLIPBUILDER_LOG_DIR=/app/logs
-            - CLIPBUILDER_ICONS_DIR=/Icons
             - CLIPBUILDER_GEMINI_MODEL=${CLIPBUILDER_GEMINI_MODEL:-models/gemini-2.5-flash}
             - CLIPBUILDER_MAX_VIDEO_BYTES=${CLIPBUILDER_MAX_VIDEO_BYTES:-6442450944}
             - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
@@ -55,7 +54,6 @@ services:
         volumes:
             - backend_data:/app/data
             - backend_logs:/app/logs
-            - ./Icons:/Icons:ro
         expose:
             - "8000"
         healthcheck:

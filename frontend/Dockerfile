@@ -9,14 +9,8 @@ WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-# Código-fonte do frontend
+# Código-fonte do frontend (os ícones já estão versionados em public/)
 COPY frontend/ ./
-
-# Pasta centralizada de ícones (ClipBuilder/Icons/) → public/, para que o Vite
-# os inclua no dist/ como assets estáticos normais.
-COPY Icons/ /Icons/
-RUN find /Icons -maxdepth 1 -type f \( -name "*.png" -o -name "*.ico" -o -name "*.svg" -o -name "*.webp" \) \
-      -exec cp {} ./public/ \; || true
 
 # ── Variáveis de build do Vite ────────────────────────────────────────────────
 # Precisam existir em build-time: o Vite as inlineia no bundle.
@@ -41,8 +35,13 @@ FROM nginx:1.27-alpine
 
 RUN apk add --no-cache curl
 
+# nginx.conf (padrão) serve HTTPS com o domínio de produção; o
+# docker-compose.dev.yml troca por nginx.dev.conf (HTTP em localhost).
+ARG NGINX_CONF=nginx.conf
+
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf            /etc/nginx/conf.d/default.conf
+COPY frontend/${NGINX_CONF}         /etc/nginx/conf.d/default.conf
+COPY frontend/nginx-app.conf        /etc/nginx/app.conf
 COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 
 EXPOSE 80

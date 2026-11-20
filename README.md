@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎬 ClipBuilder
+# ClipBuilder
 
 ### Turn a screen recording into a finished, illustrated step-by-step guide — with AI
 
@@ -25,36 +25,36 @@ It is a complete SaaS: multi-tenant authentication, an admin panel with per-user
 
 ## What it does
 
-### 📥 Flexible input
+### Flexible input
 - Direct upload (MP4, MKV) with drag & drop
 - YouTube import via `yt-dlp`
 
-### 🤖 Three AI models, each for what it is best at
+### Three AI models, each for what it is best at
 - **Gemini** — native video analysis, reasoning over timestamps rather than isolated frames
 - **Llama 4 Vision** — frame and GIF analysis
 - **Whisper Large v3 Turbo** — audio transcription
 - Step descriptions are generated automatically from all three signals
 
-### 🎨 In-browser visual editor
+### In-browser visual editor
 - Arrows, text and rectangles over any frame (Fabric.js)
 - Crop and adjust without leaving the page
 - Animated GIF steps captured straight from the video, described by the AI
 
-### 📄 Professional export
+### Professional export
 - **DOCX** — a structured Word document assembled by AI
 - **PDF** — print-ready
 - **HTML** — one standalone page
 - **Markdown** — with a ZIP of the images
 - **Plain text**
 
-### 🛡️ Admin panel
+### Admin panel
 - Users, roles and permissions through Clerk, with social login
 - Groups and departments
 - Per-user AI quotas, so one person cannot burn the whole budget
 - Usage and cost dashboard
 - System settings (SMTP, storage, API keys) editable from the UI
 
-### 💳 Billing
+### Billing
 - Subscription plans with Mercado Pago, webhook-driven
 
 ---
@@ -108,30 +108,41 @@ It is a complete SaaS: multi-tenant authentication, an admin panel with per-user
 - A [Gemini API key](https://aistudio.google.com/apikey)
 - A [Clerk](https://clerk.com) application (free tier is enough)
 
-### Run it
+### Run it locally
 
 ```bash
 git clone https://github.com/<your-user>/clipbuilder.git
 cd clipbuilder
 
 cp .env.example .env && chmod 600 .env
-# fill in DB_PASSWORD, SECRET_KEY, ADMIN_PASSWORD, CLERK_* and GEMINI_API_KEY
-# generate secrets with: openssl rand -hex 32
+# required to start: DB_PASSWORD, SECRET_KEY and ADMIN_PASSWORD
+# generate each with: openssl rand -hex 32
+# GEMINI_API_KEY and the CLERK_* keys are needed for AI and for sign-in
 
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-- Frontend: <http://localhost:5173>
+- App: <http://localhost:8080>
 - API docs: <http://localhost:8000/docs>
 
-Every setting lives in `.env` — see that file for the annotated list.
+This development setup serves plain HTTP on `127.0.0.1` only and does not start the certificate service. Every setting lives in `.env`; see that file for the annotated list.
+
+> **Known gap:** a fresh install starts with no users. `ADMIN_EMAIL` and
+> `ADMIN_PASSWORD` are read but do not create the admin account yet, so a new
+> installation cannot sign in out of the box. Fixing this is planned.
+
+### Production
+
+`docker compose up -d --build` serves HTTPS on ports 80 and 443 for the domain written in `frontend/nginx.conf`, currently fixed to `clipbuilder.com.br`. The certificate comes from Let's Encrypt through a Cloudflare DNS challenge: create `cloudflare.ini` from `cloudflare.ini.example` and run `./init-letsencrypt.sh` once. Making the domain configurable is planned.
 
 ### Running the backend locally
 
+Python 3.12, the same version as the Docker image and CI:
+
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
 uvicorn main:app --reload
 ```
 
@@ -140,6 +151,8 @@ Tests:
 ```bash
 cd backend && pytest
 ```
+
+Dependency versions are locked with hashes; see [`backend/README.md`](backend/README.md) for how to update them.
 
 ---
 
