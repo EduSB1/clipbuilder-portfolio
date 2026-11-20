@@ -145,6 +145,24 @@ CREDIT_TABLE_MIGRATIONS = [
     """,
 ]
 
+# One purchase per payment id (see CreditTransaction in app/admin/models.py).
+# Kept out of CREDIT_TABLE_MIGRATIONS on purpose: that loop treats any error
+# mentioning "duplicate" as "already applied", which is exactly the error this
+# index raises when the database already holds a payment credited twice.
+PURCHASE_PAYMENT_UNIQUE_INDEX_SQL = """
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_credit_transactions_purchase_payment
+    ON credit_transactions (stripe_payment_intent_id)
+    WHERE type = 'purchase' AND stripe_payment_intent_id IS NOT NULL
+"""
+
+DUPLICATED_PURCHASES_SQL = """
+    SELECT stripe_payment_intent_id, COUNT(*)
+    FROM credit_transactions
+    WHERE type = 'purchase' AND stripe_payment_intent_id IS NOT NULL
+    GROUP BY stripe_payment_intent_id
+    HAVING COUNT(*) > 1
+"""
+
 # SQL to ensure every existing user gets a credit_accounts row with balance=0
 SEED_CREDIT_ACCOUNTS_SQL = """
     INSERT INTO credit_accounts (id, user_id, credits_balance, total_credits_purchased, total_credits_used, created_at, updated_at)
@@ -215,6 +233,24 @@ def run_migrations() -> None:
                     logger.debug("Credit migration %d already applied: %s", i, exc)
                 else:
                     logger.warning("Credit migration %d failed: %s", i, exc)
+
+        # ── One purchase per payment ─────────────────────────────────────
+        if _table_exists(conn, "credit_transactions"):
+            try:
+                conn.execute(text(PURCHASE_PAYMENT_UNIQUE_INDEX_SQL))
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                duplicated = conn.execute(text(DUPLICATED_PURCHASES_SQL)).fetchall()
+                # Purchases keep failing (ON CONFLICT needs this index) until
+                # an operator reviews the double credits listed here: failing
+                # closed is better than crediting a payment twice again.
+                logger.error(
+                    "Could not create uq_credit_transactions_purchase_payment: %s. "
+                    "Payments credited more than once: %s",
+                    exc,
+                    [(row[0], row[1]) for row in duplicated],
+                )
 
         # ── Seed credit accounts for existing users ──────────────────────
         if _table_exists(conn, "credit_accounts"):

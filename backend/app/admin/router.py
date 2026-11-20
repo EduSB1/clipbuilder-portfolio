@@ -411,30 +411,15 @@ def adjust_user_credits(
     if body.amount == 0:
         raise HTTPException(status_code=400, detail="Valor não pode ser zero")
 
-    if body.amount > 0:
-        credit_service.add_credits(
-            db,
-            user_id=user_id,
-            amount=body.amount,
-            type_=body.type,
-            description=body.description,
-        )
-    else:
-        # Negative amount — debit (force, no 402 check: admin override)
-        account = credit_service.get_or_create_account(db, user_id)
-        from app.admin.models import CreditTransaction
-
-        account.credits_balance += body.amount  # body.amount is negative
-        account.total_credits_used += abs(body.amount)
-        tx = CreditTransaction(
-            user_id=user_id,
-            amount=body.amount,
-            type=body.type,
-            description=body.description,
-        )
-        db.add(tx)
-        db.commit()
-        db.refresh(account)
+    # Positive adds, negative removes without the balance check (admin
+    # override); both are applied atomically in the database.
+    credit_service.admin_adjust_credits(
+        db,
+        user_id=user_id,
+        amount=body.amount,
+        type_=body.type,
+        description=body.description,
+    )
 
     account = credit_service.get_or_create_account(db, user_id)
     transactions = credit_service.get_transactions(

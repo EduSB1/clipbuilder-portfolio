@@ -12,11 +12,13 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -344,10 +346,26 @@ class CreditAccount(Base):
     user: Mapped[User] = relationship("User", back_populates="credit_account")
 
 
+# Rows that represent a paid purchase. At most one may exist per payment id:
+# the unique index below is what stops the webhook, the Pix polling and the
+# card checkout from crediting the same payment twice when they race.
+PURCHASE_PAYMENT_INDEX_WHERE = text(
+    "type = 'purchase' AND stripe_payment_intent_id IS NOT NULL"
+)
+
+
 class CreditTransaction(Base):
     """Audit log for every credit movement (purchase, usage, refund, bonus)."""
 
     __tablename__ = "credit_transactions"
+    __table_args__ = (
+        Index(
+            "uq_credit_transactions_purchase_payment",
+            "stripe_payment_intent_id",
+            unique=True,
+            postgresql_where=PURCHASE_PAYMENT_INDEX_WHERE,
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_uuid)
     user_id: Mapped[str] = mapped_column(

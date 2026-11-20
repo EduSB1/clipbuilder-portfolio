@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import CurrentAuthorizedUser
 from app.billing.service import (
-    add_credits,
+    credit_purchase_once,
     get_balance,
     get_or_create_account,
     get_transactions,
@@ -124,18 +124,6 @@ def _get_mp():
     return mercadopago.SDK(token)
 
 
-def _check_idempotency(db: Session, user_id: str, payment_id: str | int) -> bool:
-    """Check if this payment_id was already credited (idempotency check).
-
-    Returns True if already credited, False otherwise.
-    """
-    txs = get_transactions(db, user_id, limit=200)
-    return any(
-        tx.stripe_payment_intent_id == str(payment_id) and tx.type == "purchase"
-        for tx in txs
-    )
-
-
 def _credit_user_if_not_done(
     db: Session,
     user_id: str,
@@ -143,31 +131,20 @@ def _credit_user_if_not_done(
     credits_amount: int,
     package_id: str,
 ) -> bool:
-    """Credit user if not already credited. Returns True if credited, False if already done."""
-    if _check_idempotency(db, user_id, payment_id):
-        logger.info(
-            "Payment %s already credited to user %s (idempotency check)",
-            payment_id,
-            user_id,
-        )
-        return False
+    """Credit an approved payment once. Returns True only for the call that credited it.
 
-    add_credits(
+    Idempotency is enforced by the database (see ``credit_purchase_once``),
+    not by scanning recent transactions: the old check only looked at the
+    last 200 transactions, so pushing a purchase out of that window let the
+    same payment be credited again.
+    """
+    return credit_purchase_once(
         db,
         user_id=user_id,
+        payment_id=str(payment_id),
         amount=credits_amount,
-        type_="purchase",
-        stripe_payment_intent_id=str(payment_id),
         description=f"Compra do pacote {package_id}: {credits_amount} créditos",
     )
-    logger.info(
-        "Credited %d credits to user %s (package=%s, payment_id=%s)",
-        credits_amount,
-        user_id,
-        package_id,
-        payment_id,
-    )
-    return True
 
 
 def _verify_mp_signature(
@@ -225,13 +202,8 @@ def _verify_mp_signature(
     ).hexdigest()
 
     if not hmac.compare_digest(expected, v1):
-        logger.warning(
-            "Webhook signature mismatch — possible spoofed request. "
-            "manifest=%s expected=%s received=%s",
-            manifest,
-            expected,
-            v1,
-        )
+        # Never log the expected signature: it is a valid MAC for this manifest.
+        logger.warning("Webhook signature mismatch — possible spoofed request (data.id=%s)", data_id)
         return False
 
     return True
