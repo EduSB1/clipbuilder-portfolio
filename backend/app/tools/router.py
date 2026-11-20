@@ -186,10 +186,10 @@ def delete_existing_tool(
 def toggle_existing_tool(
     tool_id: str,
     body: AiToolToggle,
-    _user: CurrentAuthorizedUser,
+    _admin: RequireAdmin,
     db: Session = Depends(get_db),
 ):
-    """Toggle a tool active/inactive. Any authenticated user can toggle."""
+    """Toggle a tool active/inactive (admin only: tools are global)."""
     tool = toggle_tool(db, tool_id, body.is_active)
     if not tool:
         raise HTTPException(status_code=404, detail="Tool não encontrada")
@@ -202,11 +202,15 @@ def toggle_existing_tool(
 @router.get("/{tool_id}/logs", response_model=AiToolLogListResponse)
 def get_logs_for_tool(
     tool_id: str,
-    _user: CurrentAuthorizedUser,
+    _admin: RequireAdmin,
     db: Session = Depends(get_db),
     limit: int = Query(default=50, ge=1, le=200),
 ):
-    """Get execution logs for a specific tool."""
+    """Get execution logs for a specific tool (admin only).
+
+    Tools run inside every user's /smart-text, and the logs keep a summary of
+    the input and the generated output: they hold other customers' content.
+    """
     existing = get_tool(db, tool_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Tool não encontrada")
@@ -238,11 +242,14 @@ def get_logs_for_tool(
 async def run_tools_manually(
     trigger: str,
     body: ToolRunRequest,
-    _user: CurrentAuthorizedUser,
+    _admin: RequireAdmin,
     db: Session = Depends(get_db),
     x_gemini_key: str | None = Header(default=None, alias="X-Gemini-Key"),
 ):
-    """Manually execute all active tools for the given trigger.
+    """Manually execute all active tools for the given trigger (admin only).
+
+    A testing aid for whoever configures the tools: it calls the AI with the
+    server's key and charges no credits, so regular users cannot reach it.
 
     Supported triggers: on_frame_capture, on_export, on_video_upload, manual.
     """

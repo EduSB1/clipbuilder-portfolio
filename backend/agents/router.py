@@ -129,6 +129,9 @@ async def extract_steps_endpoint(
         language=body.language,
     )
 
+    # Only admins may switch models: credits cost the same for any model.
+    model_override = body.model_override if user.get("role") == "admin" else None
+
     # Charged after validation; refunded if the model call fails.
     billing_user_id = charge_endpoint(user, "/agents/extract-steps")
 
@@ -139,7 +142,7 @@ async def extract_steps_endpoint(
             transcript=body.transcript,
             frame_descriptions=body.frame_descriptions,
             deps=deps,
-            model_override=body.model_override,
+            model_override=model_override,
         )
     except Exception as exc:
         refund_endpoint(billing_user_id, "/agents/extract-steps")

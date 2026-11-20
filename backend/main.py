@@ -681,6 +681,53 @@ def _debit_user_credits(user: dict[str, Any], endpoint: str) -> str | None:
     return charge_endpoint(user, endpoint)
 
 
+# Export permissions per output format (UserPermission.can_export_*). The
+# frontend already hid the buttons; the backend did not check, so a direct
+# request exported in any format.
+_EXPORT_PERMISSIONS = {
+    "docx": "can_export_docx",
+    "pdf": "can_export_pdf",
+    "html": "can_export_html",
+    "markdown": "can_export_md",
+}
+
+
+def _require_export_permission(user: dict[str, Any], fmt: str) -> None:
+    """403 unless *user* may export in *fmt*. Admins and plain text are always allowed."""
+    key = _EXPORT_PERMISSIONS.get(fmt)
+    if key is None or user.get("role") == "admin":
+        return
+    if not (user.get("permissions") or {}).get(key, False):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Você não tem permissão para exportar em {fmt.upper()}.",
+        )
+
+
+def _allowed_gemini_models() -> set[str]:
+    extra = os.getenv("CLIPBUILDER_ALLOWED_GEMINI_MODELS", "")
+    return {
+        DEFAULT_GEMINI_MODEL,
+        "models/gemini-2.5-flash",  # the frontend's default
+        *(m.strip() for m in extra.split(",") if m.strip()),
+    }
+
+
+def _resolve_model(requested: str | None, user: dict[str, Any]) -> str:
+    """Model for an AI call made on behalf of *user*.
+
+    Credits cost the same whatever the model, so a regular user picking an
+    expensive model would spend the server's AI budget at the cheap price.
+    Admins may choose freely; anyone else gets the default when asking for
+    a model outside the allowlist (CLIPBUILDER_ALLOWED_GEMINI_MODELS).
+    """
+    model = (requested or "").strip() or DEFAULT_GEMINI_MODEL
+    if user.get("role") == "admin" or model in _allowed_gemini_models():
+        return model
+    logger.warning("model %r not allowed for user %s; using default", model, user.get("id"))
+    return DEFAULT_GEMINI_MODEL
+
+
 def _refund_user_credits(
     user_id: str | None, endpoint: str, amount: int | None = None
 ) -> None:
@@ -2266,6 +2313,7 @@ async def smart_text(
         # Legacy aliases (retrocompatibilidade)
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
     ):
+    model = _resolve_model(model, user)
     entry = _get_owned_entry(video_id, user)
     if entry.status != "ready":
         raise HTTPException(
@@ -2575,6 +2623,7 @@ async def export_documentation(
             status_code=400,
             detail="Invalid output_format. Use markdown, html, docx, pdf, or plain.",
         )
+    _require_export_permission(user, fmt)
 
     prefix = _sanitize_image_prefix(image_name_prefix)
 
@@ -2894,6 +2943,7 @@ async def markdown_to_docx_endpoint(
     if not markdown:
         raise HTTPException(status_code=400, detail="O markdown está vazio.")
 
+    _require_export_permission(user, "docx")
     title = (body.get("title") or "documento_profissional").strip()
     filename = f"{_safe_filename(title, 'documento_profissional')}.docx"
 
@@ -3011,6 +3061,7 @@ async def markdown_to_pdf_endpoint(request: Request, user: CurrentAuthorizedUser
     if not markdown:
         raise HTTPException(status_code=400, detail="O markdown está vazio.")
 
+    _require_export_permission(user, "pdf")
     title = (body.get("title") or "documento").strip()
     filename = f"{_safe_filename(title, 'documento')}.pdf"
 
@@ -3076,6 +3127,7 @@ async def markdown_to_html_endpoint(request: Request, user: CurrentAuthorizedUse
     title = (body.get("title") or "Documento").strip()
     subtitle = (body.get("subtitle") or "Documentação Técnica").strip()
     filename = f"{_safe_filename(title, 'Documento')}.html"
+    _require_export_permission(user, "html")
     image_map = body.get("image_map") or {}
 
     try:
@@ -3138,6 +3190,8 @@ async def describe_gif(
         raise HTTPException(status_code=400, detail="Arquivo GIF inválido ou vazio.")
 
     api_key = _get_api_key(x_gemini_key or x_google_api_key)
+
+    model = _resolve_model(model, user)
 
     # ── Credit debit: after validation, right before the AI call ──
     _billing_user_id = _debit_user_credits(user, "/describe-gif")
@@ -3206,6 +3260,7 @@ async def format_and_export(
             status_code=400,
             detail="output_format deve ser 'docx' ou 'pdf'.",
         )
+    _require_export_permission(user, fmt)
 
     # Extrair texto (ficheiro ou markdown)
     try:
@@ -3388,9 +3443,13 @@ async def generate_documentation(
             status_code=400,
             detail="output_format deve ser 'json', 'markdown' ou 'docx'.",
         )
+    if output_format == "docx":
+        _require_export_permission(user, "docx")
 
     # Get API key
     api_key = _get_api_key(x_gemini_key or x_google_api_key)
+
+    model = _resolve_model(model, user)
 
     # ── Credit debit: after validation, right before the AI call ──
     _billing_user_id = _debit_user_credits(user, "/generate-documentation")
