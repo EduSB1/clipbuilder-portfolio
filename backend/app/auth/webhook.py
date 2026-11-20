@@ -39,18 +39,25 @@ async def clerk_webhook(request: Request) -> dict[str, Any]:
         try:
             from svix.webhooks import Webhook
 
-            wh = Webhook(secret)
-            evt = wh.verify(raw, _headers_dict(request))  # type: ignore[assignment]
+            # svix 2.x only validates (returns None); 1.x returned the parsed
+            # body. Parse it ourselves after a successful verification.
+            Webhook(secret).verify(raw, _headers_dict(request))
         except Exception as exc:
             # Avoid leaking details to the caller.
             logger.warning("clerk_webhook: signature verification failed: %s", exc)
             raise HTTPException(status_code=400, detail="Invalid webhook signature") from exc
-    else:
-        # Development fallback (NOT recommended for production)
         try:
             evt = json.loads(raw.decode("utf-8"))
-        except Exception:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             raise HTTPException(status_code=400, detail="Invalid JSON") from None
+        if not isinstance(evt, dict):
+            raise HTTPException(status_code=400, detail="Invalid JSON")
+    else:
+        # No secret means no way to tell Clerk from anyone else. Accepting the
+        # payload would let a forged user.updated link an attacker's Clerk id
+        # to an existing account (including the admin), so refuse instead.
+        logger.error("clerk_webhook: CLERK_WEBHOOK_SECRET is not set; refusing the event")
+        raise HTTPException(status_code=503, detail="Webhook não configurado")
 
     event_type = str(evt.get("type") or "")
     data = evt.get("data")

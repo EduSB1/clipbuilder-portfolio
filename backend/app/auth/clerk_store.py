@@ -31,18 +31,24 @@ def _normalize_email(email: str | None) -> str:
 
 
 def _extract_primary_email(clerk_user: dict[str, Any]) -> str:
+    """Return the user's primary email, but only if Clerk verified it.
+
+    The email is what links a Clerk account to an existing local account
+    (and what grants the admin role via ADMIN_EMAIL), so an unverified
+    address must never count: anyone can type someone else's email.
+    """
     emails = clerk_user.get("email_addresses") or []
     if not isinstance(emails, list):
         return ""
 
     primary_id = clerk_user.get("primary_email_address_id")
-    if primary_id:
-        for e in emails:
-            if e.get("id") == primary_id and e.get("email_address"):
-                return str(e.get("email_address"))
-
-    if emails and isinstance(emails[0], dict):
-        return str(emails[0].get("email_address") or "")
+    for e in emails:
+        if not isinstance(e, dict) or e.get("id") != primary_id:
+            continue
+        verification = e.get("verification") or {}
+        if verification.get("status") == "verified" and e.get("email_address"):
+            return str(e.get("email_address"))
+        return ""
 
     return ""
 
@@ -96,6 +102,15 @@ def upsert_user(
     if user is not None:
         if user.deleted_at is not None:
             logger.warning("clerk_store: refusing to auto-restore soft-deleted user %s", user.id)
+            return None
+
+        # Found by email but already bound to another Clerk account: never
+        # rebind or edit it from this payload.
+        if clerk_id and user.clerk_id and user.clerk_id != clerk_id:
+            logger.warning(
+                "clerk_store: email of local user %s belongs to another Clerk account; ignoring",
+                user.id,
+            )
             return None
 
         from app.core.config import settings

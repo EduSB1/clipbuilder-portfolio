@@ -155,16 +155,13 @@ def _verify_mp_signature(
     MP signs webhooks using HMAC-SHA256. The manifest to sign is:
     "id:{data.id};request-id:{x-request-id};ts:{ts};"
 
-    Returns True if signature is valid OR if no webhook secret is configured
-    (allows running without signature verification in development).
+    Returns True only for a valid signature. Without a configured secret
+    nothing can be verified, so every notification is refused.
     """
     webhook_secret = (settings.mercadopago_webhook_secret or "").strip()
     if not webhook_secret:
-        # Secret not configured — skip verification (dev/staging mode)
-        logger.warning(
-            "MERCADOPAGO_WEBHOOK_SECRET not set — skipping signature verification"
-        )
-        return True
+        logger.error("MERCADOPAGO_WEBHOOK_SECRET not set — refusing webhook")
+        return False
 
     x_signature = request_headers.get("x-signature", "")
     x_request_id = request_headers.get("x-request-id", "")
