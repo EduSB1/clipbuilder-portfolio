@@ -42,6 +42,9 @@ export default function SysLogin() {
 
             sessionStorage.setItem("__sys_token", token);
             api.defaults.headers.common["Authorization"] = "Bearer " + token;
+            // Sem isso o contexto de autenticação não via o token novo, e a rota
+            // protegida devolvia para /login: só funcionava recarregando a página.
+            await refreshProfile();
             navigate("/admin");
         } catch (err) {
             const detail =
