@@ -303,7 +303,7 @@ def _handle_gemini_error(exc: Exception) -> None:
         ) from exc
     if "invalid" in msg and "api" in msg:
         raise RuntimeError(
-            "Chave da API Google inválida. Verifique 'gemini_api_key' no .env do backend."
+            "A chave da IA configurada no servidor é inválida. Avise o administrador."
         ) from exc
     if "permission" in msg or "403" in msg:
         raise RuntimeError(

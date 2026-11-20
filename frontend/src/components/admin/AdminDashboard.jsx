@@ -2897,12 +2897,11 @@ function SettingsTab({ setError, setSuccessMsg }) {
     const isGmail =
         smtpHost.includes("smtp.gmail.com") || smtpHost.includes("gmail");
 
-    const categories = ["smtp", "ai", "storage", "security", "features"];
+    // Só categorias com opções que o backend realmente aplica.
+    const categories = ["smtp", "storage", "features"];
     const CATEGORY_LABELS = {
         smtp: "SMTP",
-        ai: "IA",
-        storage: "Storage",
-        security: "Segurança",
+        storage: "Armazenamento",
         features: "Recursos",
     };
 

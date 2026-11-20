@@ -70,19 +70,7 @@ DEFAULT_SEED = [
     ("smtp", "use_tls", "true", "boolean", "Usar TLS"),
     ("smtp", "from_email", "", "string", "Email remetente (deve ser igual ao e-mail de autenticação)"),
     ("smtp", "frontend_url", "", "string", "URL pública do frontend (ex: https://app.suaempresa.com.br)"),
-    ("storage", "max_video_size_gb", "6", "number", "Tamanho máximo de vídeo (GB)"),
-    ("storage", "cleanup_days", "30", "number", "Dias para limpar vídeos antigos"),
-    ("storage", "total_quota_gb", "1000", "number", "Quota total de storage (GB)"),
-    ("security", "jwt_expiration_hours", "24", "number", "Expiração do JWT (horas)"),
-    ("security", "password_min_length", "8", "number", "Tamanho mínimo de senha"),
-    (
-        "security",
-        "require_email_verification",
-        "true",
-        "boolean",
-        "Exigir verificação de email",
-    ),
-    ("security", "max_login_attempts", "5", "number", "Tentativas máximas de login"),
+    ("storage", "max_video_size_gb", "6", "number", "Tamanho máximo de vídeo por upload (GB)"),
     (
         "features",
         "allow_youtube_import",
@@ -104,19 +92,32 @@ DEFAULT_SEED = [
         "number",
         "Máximo de passos por documento",
     ),
-    (
-        "features",
-        "template_permissions_enabled",
-        "false",
-        "boolean",
-        "Habilitar restrição de templates por usuário",
-    ),
+]
+
+
+# Settings the panel used to show but nothing read: authentication rules
+# belong to Clerk, retention is CLIPBUILDER_VIDEO_RETENTION_HOURS, and
+# template restrictions are a per-user permission. Removed at startup so the
+# panel only offers options that have an effect.
+OBSOLETE_SETTINGS = [
+    ("storage", "cleanup_days"),
+    ("storage", "total_quota_gb"),
+    ("security", "jwt_expiration_hours"),
+    ("security", "password_min_length"),
+    ("security", "require_email_verification"),
+    ("security", "max_login_attempts"),
+    ("features", "template_permissions_enabled"),
 ]
 
 
 def seed_settings(db: Session) -> None:
-    """Insert default settings if missing."""
-    from sqlalchemy import select
+    """Insert default settings if missing and drop obsolete ones."""
+    from sqlalchemy import delete, select
+
+    for cat, key in OBSOLETE_SETTINGS:
+        db.execute(
+            delete(SystemSetting).where(SystemSetting.category == cat, SystemSetting.key == key)
+        )
 
     for cat, key, val, vtype, desc in DEFAULT_SEED:
         exists = db.scalar(

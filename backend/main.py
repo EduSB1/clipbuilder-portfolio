@@ -771,13 +771,12 @@ def _get_api_key(header_key: str | None = None) -> str:
         logger.info("Gemini: usando chave do servidor (Env) [%s]", _mask_key(key))
         return key
 
-    # 3. Nenhuma chave disponível
+    # 3. Nenhuma chave disponível. 503, não 401: o problema é a configuração
+    # do servidor, e o frontend trata 401 como sessão expirada.
+    logger.error("Gemini: GEMINI_API_KEY não configurada")
     raise HTTPException(
-        status_code=401,
-        detail=(
-            "Chave da API Gemini não configurada no servidor. "
-            "Verifique o arquivo .env no backend."
-        ),
+        status_code=503,
+        detail="A IA ainda não foi configurada no servidor. Avise o administrador.",
     )
 
 
@@ -1285,13 +1284,7 @@ def _download_youtube_video(*, url: str, out_path: Path) -> None:
             out_path.unlink(missing_ok=True)
         except Exception:
             pass
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
-                "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
-            ),
-        )
+        raise _too_large(MAX_VIDEO_BYTES)
 
 
 def _make_gemini_clip(
@@ -1944,14 +1937,54 @@ def _merge_upload_if_complete(
     return video_id, final_path
 
 
-def _too_large() -> HTTPException:
+def _too_large(limit_bytes: int) -> HTTPException:
     return HTTPException(
         status_code=413,
-        detail=(
-            f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
-            "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
-        ),
+        detail=f"Vídeo maior que o limite de {max(1, limit_bytes // (1024 * 1024))} MB.",
     )
+
+
+# ── Settings from the admin panel (category "storage" and "features") ──
+def _panel_setting(category: str, key: str) -> str | None:
+    from app.admin.settings.service import get_setting_value
+
+    return get_setting_value(category, key)
+
+
+def _panel_flag(category: str, key: str, default: bool) -> bool:
+    value = _panel_setting(category, key)
+    if value is None:
+        return default
+    return value.strip().lower() in {"true", "1", "yes", "on"}
+
+
+def _panel_number(category: str, key: str) -> float | None:
+    value = _panel_setting(category, key)
+    try:
+        return float(value) if value is not None else None
+    except ValueError:
+        return None
+
+
+def _max_video_bytes_for(user: dict[str, Any]) -> int:
+    """Smallest of: the server limit (env), the panel limit and the user's own limit."""
+    limits = [MAX_VIDEO_BYTES]
+    panel_gb = _panel_number("storage", "max_video_size_gb")
+    user_gb = (user.get("permissions") or {}).get("max_video_size_gb")
+    for gb in (panel_gb, user_gb):
+        if gb and gb > 0:
+            limits.append(int(gb * 1024 * 1024 * 1024))
+    return min(limits)
+
+
+def _check_step_limit(count: int) -> None:
+    """Reject documents above the panel's "max_steps_per_document"."""
+    limit = _panel_number("features", "max_steps_per_document")
+    if limit and count > limit:
+        raise HTTPException(
+            status_code=400,
+            detail=f"O documento tem {count} passos; o limite é {int(limit)}.",
+        )
 
 
 @app.post("/videos/raw")
@@ -2036,16 +2069,17 @@ async def upload_video_raw(
         previous_size = 0
 
     total = 0
+    max_bytes = await _run_blocking(_max_video_bytes_for, user)
     try:
-        if previous_size > MAX_VIDEO_BYTES:
-            raise _too_large()
+        if previous_size > max_bytes:
+            raise _too_large(max_bytes)
         with target_path.open("wb") as f:
             async for chunk in request.stream():
                 if not chunk:
                     continue
                 total += len(chunk)
-                if (previous_size + total) > MAX_VIDEO_BYTES:
-                    raise _too_large()
+                if (previous_size + total) > max_bytes:
+                    raise _too_large(max_bytes)
                 f.write(chunk)
     except HTTPException:
         _refund_user_credits(_billing_user_id, "/videos/raw")
@@ -2060,10 +2094,7 @@ async def upload_video_raw(
             )
             raise HTTPException(
                 status_code=507,
-                detail=(
-                    "Sem espaço em disco para salvar o vídeo. "
-                    "Ajuste CLIPBUILDER_DATA_DIR para um caminho com espaço suficiente."
-                ),
+                detail="Sem espaço no servidor para salvar o vídeo. Tente mais tarde ou avise o administrador.",
             ) from exc
         logger.error(
             "os error while saving raw upload to %s", target_path, exc_info=True
@@ -2174,6 +2205,11 @@ async def upload_youtube(
     # NOTE: API key validation removed from here – downloading a YouTube video
     # does not require the Gemini key.  The key will be validated later when
     # the user actually requests AI processing (e.g. /smart-text).
+
+    if not await _run_blocking(_panel_flag, "features", "allow_youtube_import", True):
+        raise HTTPException(
+            status_code=403, detail="A importação do YouTube está desativada pelo administrador."
+        )
 
     # One import at a time per user, checked before charging.
     with _videos_lock:
@@ -2555,6 +2591,7 @@ async def export_documentation(
     output_format: str | None = Form(default="markdown"),
 ):
     parsed_steps = _parse_steps(steps)
+    await _run_blocking(_check_step_limit, len(parsed_steps))
 
     fmt = (output_format or "markdown").strip().lower()
     if fmt not in {"markdown", "html", "docx", "plain", "pdf"}:
@@ -2768,6 +2805,7 @@ async def enhance_document(
 
     if len(steps) == 0:
         raise HTTPException(status_code=400, detail="Pelo menos um passo é necessário")
+    await _run_blocking(_check_step_limit, len(steps))
 
     # Validate steps — preserve all enriched fields so the AI prompt
     # receives title, userAction, expectedResult, observations, etc.
@@ -2810,7 +2848,9 @@ async def enhance_document(
         if "quota" in msg or "limite" in msg or "429" in msg or "rate limit" in msg or "ratelimit" in msg:
             raise HTTPException(status_code=429, detail=str(exc)) from exc
         if "inválida" in msg or "permissão" in msg or "401" in msg or "403" in msg:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+            # Chave do servidor recusada pelo Gemini: falha de configuração, não de
+            # sessão (o frontend trata 401 como sessão expirada).
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         _refund_user_credits(_billing_user_id, "/enhance-document")
@@ -3111,6 +3151,11 @@ async def describe_gif(
     opcionais.  A chave da API vem do header X-Gemini-Key ou da configuração do
     backend.  Resposta: {"description": "..."}
     """
+    if not await _run_blocking(_panel_flag, "features", "enable_gif_generation", True):
+        raise HTTPException(
+            status_code=403, detail="A geração de GIFs está desativada pelo administrador."
+        )
+
     if not file.filename or not file.filename.lower().endswith((".gif",)):
         raise HTTPException(
             status_code=400,
@@ -3343,6 +3388,7 @@ async def generate_documentation(
         raise HTTPException(
             status_code=400, detail="Campo 'steps' é obrigatório e deve ser uma lista."
         )
+    await _run_blocking(_check_step_limit, len(steps_raw))
 
     # Validate and normalize steps
     validated_steps = []
