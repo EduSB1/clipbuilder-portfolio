@@ -13,7 +13,7 @@ Provides functions to manage user credit accounts:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -221,6 +221,58 @@ def refund_credits(
         type_="refund",
         description=desc,
     )
+
+
+def charge_endpoint(user: dict[str, Any], endpoint: str) -> str | None:
+    """Debit the credit cost of *endpoint* from an authenticated *user*.
+
+    Fails closed: the caller must pass the user resolved by an auth
+    dependency, never ``None``. Admins are exempt and nothing is debited.
+
+    Returns:
+        The user id when credits were debited, or ``None`` for admins, so the
+        result can go straight to :func:`refund_endpoint` on failure.
+
+    Raises:
+        HTTPException: 403 if the user record has no id, 402 if the balance
+            is insufficient.
+    """
+    from app.billing.costs import get_credit_cost
+    from app.database import SessionLocal
+
+    if user.get("role") == "admin":
+        return None
+    user_id = user.get("id")
+    if not user_id:
+        raise HTTPException(status_code=403, detail="Conta não identificada.")
+
+    with SessionLocal() as db:
+        debit_credits(db, user_id=user_id, amount=get_credit_cost(endpoint), endpoint=endpoint)
+    return user_id
+
+
+def refund_endpoint(user_id: str | None, endpoint: str, amount: int | None = None) -> None:
+    """Give back the credits debited by :func:`charge_endpoint` after a failure.
+
+    Does nothing when ``user_id`` is ``None`` (admin, or nothing was debited).
+    Errors are logged, not raised: a failed refund must not hide the error
+    that triggered it.
+    """
+    if not user_id:
+        return
+
+    from app.billing.costs import get_credit_cost
+    from app.database import SessionLocal
+
+    refund_amount = amount if amount is not None else get_credit_cost(endpoint)
+    try:
+        with SessionLocal() as db:
+            refund_credits(db, user_id=user_id, amount=refund_amount, endpoint=endpoint)
+        logger.info(
+            "Refunded %d credits to user %s (endpoint=%s)", refund_amount, user_id, endpoint
+        )
+    except Exception as exc:
+        logger.error("Failed to refund credits for user %s: %s", user_id, exc, exc_info=True)
 
 
 def get_transactions(

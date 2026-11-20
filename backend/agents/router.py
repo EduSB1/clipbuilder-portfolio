@@ -25,6 +25,8 @@ from agents.step_extractor import (
     StepOutput,
     extract_steps,
 )
+from app.auth.deps import RequireGemini
+from app.billing.service import charge_endpoint, refund_endpoint
 
 logger = logging.getLogger("clipbuilder.agents.router")
 
@@ -99,6 +101,7 @@ class ExtractStepsResponse(BaseModel):
 )
 async def extract_steps_endpoint(
     body: ExtractStepsRequest,
+    user: RequireGemini,
 ) -> ExtractStepsResponse:
     """Run the step-extractor agent and return structured steps.
 
@@ -126,6 +129,9 @@ async def extract_steps_endpoint(
         language=body.language,
     )
 
+    # Charged after validation; refunded if the model call fails.
+    billing_user_id = charge_endpoint(user, "/agents/extract-steps")
+
     # NOTE: model_override flows through to extract_steps() → agent.override(),
     # which is the correct PydanticAI pattern for per-request model switching.
     try:
@@ -136,6 +142,7 @@ async def extract_steps_endpoint(
             model_override=body.model_override,
         )
     except Exception as exc:
+        refund_endpoint(billing_user_id, "/agents/extract-steps")
         logger.exception("Step extraction failed: %s", exc)
         raise HTTPException(
             status_code=502,

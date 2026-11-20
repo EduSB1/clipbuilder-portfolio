@@ -57,9 +57,9 @@ from app.admin.router import router as admin_router
 from app.admin.usage_logger import log_ai_usage_background
 from app.auth.deps import (
     CurrentAuthorizedUser,
-    get_current_user_jwt,
+    RequireGemini,
+    get_current_authorized_user,
 )
-from app.auth.store import get_user_by_id
 from app.auth.webhook import router as clerk_webhook_router
 from app.billing.router import router as billing_router
 from app.core.constants import (
@@ -609,173 +609,25 @@ def _mask_key(key: str) -> str:
     return f"{key[:4]}...{key[-4:]}"
 
 
-def _get_user_from_authorization(authorization: str | None) -> dict | None:
-    """Extract user from Authorization header without raising exceptions.
+def _debit_user_credits(user: dict[str, Any], endpoint: str) -> str | None:
+    """Debit the credit cost of *endpoint* from the authenticated *user*.
 
-    Lookup strategy:
-      1. Try get_user_by_id(sub) — works when Clerk sync mapped sub → local UUID.
-      2. Fallback: try get_user_by_clerk_id(_clerk_id) — works when sync
-         failed but the user already exists in DB with the given clerk_id.
-
-    NOTE: Auto-sync (creating new DB records on the fly) has been intentionally
-    removed. A user MUST exist in the local DB to be granted access. This prevents
-    deleted/excluded users from regaining access by re-logging with Clerk.
-    Account status is enforced: deleted or inactive users are blocked here.
+    Thin wrapper over :func:`app.billing.service.charge_endpoint`: admins are
+    exempt (returns ``None``) and there is no anonymous path, because every
+    route that calls this requires an authenticated user dependency.
     """
-    if not authorization or not isinstance(authorization, str):
-        return None
-    raw = authorization.strip()
-    if not raw.lower().startswith("bearer "):
-        return None
-    token = raw[7:].strip()
-    if not token:
-        return None
-    try:
-        from app.auth.store import get_user_by_clerk_id
+    from app.billing.service import charge_endpoint
 
-        payload = get_current_user_jwt(authorization)
-        sub = payload.get("sub", "")
-        clerk_id = payload.get("_clerk_id", "")
-
-        # 1. Primary lookup — by local UUID (set by sync step)
-        user = get_user_by_id(sub) if sub else None
-
-        # 2. Fallback — by clerk_id field
-        if not user and clerk_id:
-            user = get_user_by_clerk_id(clerk_id)
-
-        # Also try sub directly as clerk_id when it looks like one (starts with 'user_')
-        if not user and sub and sub.startswith("user_"):
-            user = get_user_by_clerk_id(sub)
-
-        if not user:
-            return None
-
-        # Enforce account status — deleted or inactive users are denied
-        if user.get("deleted_at") is not None or not user.get("is_active", True):
-            logger.warning(
-                "_get_user_from_authorization: blocked inactive/deleted user id=%s",
-                user.get("id"),
-            )
-            return None
-
-        return user
-    except Exception:
-        return None
-
-
-def _check_ai_permission(authorization: str | None, provider: str) -> None:
-    """Check if user has permission to use the specified AI provider.
-
-    Args:
-        authorization: Authorization header value
-        provider: One of 'gemini'
-
-    Raises:
-        HTTPException: 403 if user doesn't have permission
-    """
-    user = _get_user_from_authorization(authorization)
-    if not user:
-        # If no user found, allow (legacy behavior for unauthenticated endpoints)
-        return
-
-    permissions = user.get("permissions", {})
-    permission_key = f"can_use_{provider}"
-
-    if not permissions.get(permission_key, True):
-        provider_names = {"gemini": "Gemini"}
-        provider_name = provider_names.get(provider, provider)
-        raise HTTPException(
-            status_code=403,
-            detail=f"Você não tem permissão para usar o {provider_name}. "
-            "Entre em contato com o administrador.",
-        )
-
-
-def _debit_user_credits(authorization: str | None, endpoint: str) -> str | None:
-    """Verify and debit credits for an AI endpoint call.
-
-    Admins are exempt from credit requirements. If the user cannot be
-    identified (e.g. unauthenticated legacy request), the call is allowed
-    without debiting (graceful degradation).
-
-    Args:
-        authorization: The raw ``Authorization`` header value.
-        endpoint: The endpoint path string (e.g. ``"/smart-text"``).
-
-    Returns:
-        The local ``user_id`` if credits were debited, or ``None`` if the
-        user could not be resolved (no debit occurred).
-
-    Raises:
-        HTTPException: 402 if the user has insufficient credits.
-    """
-    from app.billing.costs import get_credit_cost
-    from app.billing.service import debit_credits
-    from app.database import SessionLocal
-
-    user = _get_user_from_authorization(authorization)
-    if not user:
-        # Cannot identify user — allow the request (legacy / unauthenticated)
-        return None
-
-    # Admins are exempt from credit billing
-    if user.get("role") == "admin":
-        return user.get("id")
-
-    user_id = user.get("id", "")
-    if not user_id:
-        return None
-
-    cost = get_credit_cost(endpoint)
-
-    with SessionLocal() as db:
-        debit_credits(db, user_id=user_id, amount=cost, endpoint=endpoint)
-
-    return user_id
+    return charge_endpoint(user, endpoint)
 
 
 def _refund_user_credits(
     user_id: str | None, endpoint: str, amount: int | None = None
 ) -> None:
-    """Refund credits after an AI call failure.
+    """Refund credits debited by :func:`_debit_user_credits` after a failure."""
+    from app.billing.service import refund_endpoint
 
-    Called in except blocks when the AI provider fails *after* credits were
-    already debited.  Silently does nothing if ``user_id`` is ``None`` or
-    the user is an admin.
-
-    Args:
-        user_id: The local user UUID returned by :func:`_debit_user_credits`.
-        endpoint: The endpoint path (for audit logging).
-        amount: Override refund amount. If ``None``, uses the endpoint's cost.
-    """
-    if not user_id:
-        return
-
-    from app.billing.costs import get_credit_cost
-    from app.billing.service import refund_credits
-    from app.database import SessionLocal
-
-    # Check if admin (admins were never debited)
-    user = get_user_by_id(user_id)
-    if user and user.get("role") == "admin":
-        return
-
-    refund_amount = amount if amount is not None else get_credit_cost(endpoint)
-
-    try:
-        with SessionLocal() as db:
-            refund_credits(db, user_id=user_id, amount=refund_amount, endpoint=endpoint)
-        logger.info(
-            "Refunded %d credits to user %s (endpoint=%s)",
-            refund_amount,
-            user_id,
-            endpoint,
-        )
-    except Exception as exc:
-        logger.error(
-            "Failed to refund credits for user %s: %s", user_id, exc, exc_info=True
-        )
+    refund_endpoint(user_id, endpoint, amount)
 
 
 def _get_api_key(header_key: str | None = None) -> str:
@@ -1863,7 +1715,7 @@ def auth_me(user: CurrentAuthorizedUser) -> dict:
     return user
 
 
-@app.get("/ai-keys-status")
+@app.get("/ai-keys-status", dependencies=[Depends(get_current_authorized_user)])
 async def ai_keys_status():
     """Retorna quais chaves de IA estão configuradas no servidor (via .env)."""
     return {
@@ -1874,6 +1726,7 @@ async def ai_keys_status():
 
 @app.post("/test-api-keys")
 async def test_api_keys(
+    user: RequireGemini,
     x_gemini_key: str | None = Header(default=None, alias="X-Gemini-Key"),
         x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
     ):
@@ -1903,6 +1756,7 @@ async def test_api_keys(
 
 @app.post("/videos")
 async def upload_video(
+    user: CurrentAuthorizedUser,
     video: UploadFile = File(...),
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
 ):
@@ -1928,6 +1782,10 @@ async def upload_video(
     video_id = uuid.uuid4().hex
     target_path = DATA_DIR / f"video_{video_id}{ext}"
 
+    # Same price as the raw upload: this route is an alternative way in, not
+    # a free one. Charged only after the cheap validations above.
+    _billing_user_id = _debit_user_credits(user, "/videos/raw")
+
     total = 0
     try:
         with target_path.open("wb") as f:
@@ -1945,7 +1803,13 @@ async def upload_video(
                         ),
                     )
                 f.write(chunk)
+    except HTTPException:
+        _refund_user_credits(_billing_user_id, "/videos/raw")
+        target_path.unlink(missing_ok=True)
+        raise
     except OSError as exc:
+        _refund_user_credits(_billing_user_id, "/videos/raw")
+        target_path.unlink(missing_ok=True)
         if getattr(exc, "errno", None) == ENOSPC:
             logger.error(
                 "disk full while saving upload to %s", target_path, exc_info=True
@@ -1978,6 +1842,7 @@ async def upload_video(
 @app.post("/videos/raw")
 async def upload_video_raw(
     request: Request,
+    user: CurrentAuthorizedUser,
     x_filename: str | None = Header(default=None, alias="X-Filename"),
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
     x_upload_id: str | None = Header(default=None, alias="X-Upload-Id"),
@@ -2003,27 +1868,19 @@ async def upload_video_raw(
         
         if chunk_index < 0 or total_chunks <= 0 or chunk_index >= total_chunks:
             raise HTTPException(status_code=400, detail="Invalid chunk range parameters")
-        
-        # Only debit on first chunk
-        if chunk_index == 0:
-            _billing_user_id = _debit_user_credits(
-                request.headers.get("authorization"), "/videos/raw"
-            )
-    else:
-        # Standard raw upload, debit user credits
-        _billing_user_id = _debit_user_credits(
-            request.headers.get("authorization"), "/videos/raw"
-        )
 
+    # Validate before charging: a rejected request must not cost credits, and
+    # a debit followed by a refund would only add noise to the ledger.
     filename = (x_filename or "video.mp4").strip()
     ext = Path(filename).suffix.lower()
     if ext not in {".mp4", ".mkv"}:
-        # Refund credits if error occurs
-        if _billing_user_id:
-            _refund_user_credits(_billing_user_id, "/videos/raw")
         raise HTTPException(
             status_code=400, detail="Formato inválido. Use .mp4 ou .mkv"
         )
+
+    # Chunked uploads are charged once, on the first chunk.
+    if not is_chunked or chunk_index == 0:
+        _billing_user_id = _debit_user_credits(user, "/videos/raw")
 
     if is_chunked:
         chunk_target_path = DATA_DIR / f"upload_{x_upload_id}_{chunk_index}.part"
@@ -2152,7 +2009,7 @@ async def upload_video_raw(
 
 
 @app.get("/videos/{video_id}/status")
-def video_status(video_id: str):
+def video_status(video_id: str, user: CurrentAuthorizedUser):
     with _videos_lock:
         entry = _videos.get(video_id)
         if not entry:
@@ -2192,13 +2049,9 @@ def video_file(video_id: str):
 async def upload_youtube(
     background_tasks: BackgroundTasks,
     request: Request,
+    user: CurrentAuthorizedUser,
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
 ):
-    # ── Credit debit (before processing) ──
-    _billing_user_id = _debit_user_credits(
-        request.headers.get("authorization"), "/videos/youtube"
-    )
-
     # Expect JSON: {"url": "https://..."}
     try:
         payload = await request.json()
@@ -2221,6 +2074,9 @@ async def upload_youtube(
     # does not require the Gemini key.  The key will be validated later when
     # the user actually requests AI processing (e.g. /smart-text).
 
+    # Charged only after the URL is validated; refunded if the download fails.
+    _billing_user_id = _debit_user_credits(user, "/videos/youtube")
+
     video_id = uuid.uuid4().hex
     target_path = DATA_DIR / f"video_{video_id}.mp4"
 
@@ -2238,12 +2094,14 @@ async def upload_youtube(
             # Cleanup old files to stay within MAX_DATA_FILES limit
             _cleanup_old_files()
         except HTTPException as exc:
+            _refund_user_credits(_billing_user_id, "/videos/youtube")
             with _videos_lock:
                 current = _videos.get(video_id)
                 if current:
                     current.status = "error"
                     current.error = str(exc.detail)
         except Exception as exc:
+            _refund_user_credits(_billing_user_id, "/videos/youtube")
             with _videos_lock:
                 current = _videos.get(video_id)
                 if current:
@@ -2265,6 +2123,7 @@ async def smart_text(
     request: Request,
     background_tasks: BackgroundTasks,
     video_id: str,
+    user: RequireGemini,
     timestamp: str | None = None,
     t: float | None = None,
     model: str = DEFAULT_GEMINI_MODEL,
@@ -2274,13 +2133,6 @@ async def smart_text(
         # Legacy aliases (retrocompatibilidade)
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
     ):
-    # Check AI permission based on model provider
-    authorization = request.headers.get("authorization")
-    _check_ai_permission(authorization, "gemini")
-
-    # ── Credit debit (before AI call) ──
-    _billing_user_id = _debit_user_credits(authorization, "/smart-text")
-
     with _videos_lock:
         entry = _videos.get(video_id)
         if not entry:
@@ -2310,6 +2162,10 @@ async def smart_text(
 
     # Default: Use Gemini
     api_key = _get_api_key(gemini_header)
+
+    # ── Credit debit: after every validation, right before the AI work ──
+    _billing_user_id = _debit_user_credits(user, "/smart-text")
+
     clip_key = f"{int(ts_seconds)}:{int(GEMINI_CLIP_SECONDS)}"
     with _videos_lock:
         cached = entry.clip_cache.get(clip_key)
@@ -2338,6 +2194,7 @@ async def smart_text(
                 if current and current.status == "ready":
                     current.clip_cache[clip_key] = cached
         except HTTPException:
+            _refund_user_credits(_billing_user_id, "/smart-text")
             raise
         except Exception as exc:
             _refund_user_credits(_billing_user_id, "/smart-text")
@@ -2576,6 +2433,7 @@ async def smart_text(
 
 @app.post("/export")
 async def export_documentation(
+    user: CurrentAuthorizedUser,
     steps: str = Form(...),
     images: list[UploadFile] = File(default=[]),
     image_name_prefix: str | None = Form(default=None),
@@ -2738,18 +2596,10 @@ async def export_documentation(
 async def enhance_document(
     request: Request,
     background_tasks: BackgroundTasks,
-    user: CurrentAuthorizedUser,
+    user: RequireGemini,
     x_gemini_key: str | None = Header(default=None, alias="X-Gemini-Key"),
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
 ):
-    # Check Gemini permission
-    _check_ai_permission(request.headers.get("authorization"), "gemini")
-
-    # ── Credit debit (before AI call) ──
-    _billing_user_id = _debit_user_credits(
-        request.headers.get("authorization"), "/enhance-document"
-    )
-
     """
     Transforma passos capturados em documento profissional estruturado usando Gemini.
 
@@ -2824,6 +2674,9 @@ async def enhance_document(
             )
         else:
             raise HTTPException(status_code=400, detail=f"Passo {i + 1} inválido")
+
+    # ── Credit debit: after validation, right before the AI call ──
+    _billing_user_id = _debit_user_credits(user, "/enhance-document")
 
     # Call enhancement function (Gemini)
     try:
@@ -3010,7 +2863,7 @@ async def markdown_to_docx_endpoint(
 
 
 @app.post("/markdown-to-pdf")
-async def markdown_to_pdf_endpoint(request: Request):
+async def markdown_to_pdf_endpoint(request: Request, user: CurrentAuthorizedUser):
     """
     Converte markdown em ficheiro .pdf.
     Body JSON: { "markdown": "...", "title": "opcional" }.
@@ -3068,7 +2921,7 @@ async def markdown_to_pdf_endpoint(request: Request):
 
 
 @app.post("/markdown-to-html")
-async def markdown_to_html_endpoint(request: Request):
+async def markdown_to_html_endpoint(request: Request, user: CurrentAuthorizedUser):
     """
     Converte markdown em ficheiro .html (capa, sumário, callouts, rodapé).
     Body JSON: { "markdown": "...", "title": "opcional", "subtitle": "opcional", "image_map": "opcional" }.
@@ -3125,6 +2978,7 @@ async def markdown_to_html_endpoint(request: Request):
 async def describe_gif(
     request: Request,
     background_tasks: BackgroundTasks,
+    user: RequireGemini,
     file: UploadFile = File(...),
     document_context: str | None = Form(default=None),
     document_title: str | None = Form(default=None),
@@ -3138,28 +2992,15 @@ async def describe_gif(
     opcionais.  A chave da API vem do header X-Gemini-Key ou da configuração do
     backend.  Resposta: {"description": "..."}
     """
-    # Check Gemini permission
-    _check_ai_permission(request.headers.get("authorization"), "gemini")
-
-    # ── Credit debit (before AI call) ──
-    _billing_user_id = _debit_user_credits(
-        request.headers.get("authorization"), "/describe-gif"
-    )
-
-    """
-    Analisa um GIF e devolve uma legenda/instrução de passo (Passo X) gerada pela IA Gemini.
-
-    Multipart: file (GIF obrigatório), document_context (opcional), document_title (opcional).
-    Header: X-Gemini-Api-Key (ou configuração no .env do backend).
-    Resposta: { "description": "..." }
-    """
     if not file.filename or not file.filename.lower().endswith((".gif",)):
         raise HTTPException(
             status_code=400,
             detail="Envie um arquivo GIF (extensão .gif).",
         )
 
-    gif_bytes = await file.read()
+    # Read at most one byte past the limit: an oversized upload is rejected
+    # without loading the whole file into memory.
+    gif_bytes = await file.read(MAX_GIF_BYTES + 1)
     if len(gif_bytes) > MAX_GIF_BYTES:
         raise HTTPException(
             status_code=413,
@@ -3169,6 +3010,9 @@ async def describe_gif(
         raise HTTPException(status_code=400, detail="Arquivo GIF inválido ou vazio.")
 
     api_key = _get_api_key(x_gemini_key or x_google_api_key)
+
+    # ── Credit debit: after validation, right before the AI call ──
+    _billing_user_id = _debit_user_credits(user, "/describe-gif")
 
     def work() -> str:
         return _describe_gif_with_gemini(
@@ -3212,6 +3056,7 @@ async def describe_gif(
 async def format_and_export(
     request: Request,
     background_tasks: BackgroundTasks,
+    user: RequireGemini,
     file: UploadFile | None = File(default=None),
     markdown: str | None = Form(default=None),
     output_format: str = Form(default="docx"),
@@ -3220,22 +3065,8 @@ async def format_and_export(
 ):
     """Formata um documento no template passo a passo e exporta em .docx ou .pdf.
 
-    Form: file (.md/.docx/.pdf) ou markdown, mais output_format (docx | pdf).
-    """
-    # Check Gemini permission
-    _check_ai_permission(request.headers.get("authorization"), "gemini")
-
-    # ── Credit debit (before AI call) ──
-    _billing_user_id = _debit_user_credits(
-        request.headers.get("authorization"), "/format-and-export"
-    )
-
-    """
-    Lê documento (upload .md/.docx/.pdf ou texto markdown), formata via Gemini
-    segundo o template passo a passo e devolve ficheiro .docx ou .pdf.
-
-    Form: file (opcional), markdown (opcional), output_format (docx | pdf).
-    Pelo menos um de file ou markdown é obrigatório.
+    Form: file (.md/.docx/.pdf) ou markdown, mais output_format (docx | pdf);
+    pelo menos um de file ou markdown é obrigatório.
     """
     from app.services.document_loader import extract_text_from_document
     from app.services.enhance import format_document_like_template
@@ -3264,6 +3095,9 @@ async def format_and_export(
 
     # Formatar com Gemini (template passo a passo)
     api_key = _get_api_key(x_gemini_key or x_google_api_key)
+
+    # ── Credit debit: after validation, right before the AI call ──
+    _billing_user_id = _debit_user_credits(user, "/format-and-export")
     try:
         formatted_md = await _run_blocking(
             format_document_like_template,
@@ -3282,6 +3116,7 @@ async def format_and_export(
         ) from exc
 
     if not formatted_md or not formatted_md.strip():
+        _refund_user_credits(_billing_user_id, "/format-and-export")
         raise HTTPException(
             status_code=500,
             detail="Gemini devolveu resposta vazia.",
@@ -3313,8 +3148,11 @@ async def format_and_export(
             filename = "manual.pdf"
             media_type = "application/pdf"
     except RuntimeError as exc:
+        # The user gets no file, so the charge for this request is returned.
+        _refund_user_credits(_billing_user_id, "/format-and-export")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
+        _refund_user_credits(_billing_user_id, "/format-and-export")
         logger.error("Erro ao exportar documento: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
@@ -3338,6 +3176,7 @@ async def format_and_export(
 async def generate_documentation(
     request: Request,
     background_tasks: BackgroundTasks,
+    user: RequireGemini,
     model: str = DEFAULT_GEMINI_MODEL,
     x_gemini_key: str | None = Header(default=None, alias="X-Gemini-Key"),
     x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
@@ -3346,29 +3185,9 @@ async def generate_documentation(
 
     Body JSON: title, steps (lista de {"description", "has_image"}) e
     output_format ("json" | "markdown" | "docx").
-    """
-    # Check Gemini permission
-    _check_ai_permission(request.headers.get("authorization"), "gemini")
 
-    # ── Credit debit (before AI call) ──
-    _billing_user_id = _debit_user_credits(
-        request.headers.get("authorization"), "/generate-documentation"
-    )
-
-    """
-    Gera documentação técnica estruturada a partir de passos capturados.
-
-    Body JSON:
-    {
-        "title": "Título do Documento",
-        "steps": [{"description": "...", "has_image": true}],
-        "output_format": "json" | "markdown" | "docx"
-    }
-
-    Retorna:
-    - JSON: Objeto estruturado com visao_geral, passos, avisos, checklist, troubleshooting
-    - Markdown: Documento formatado em Markdown
-    - DOCX: Arquivo .docx para download
+    Retorna JSON estruturado (visao_geral, passos, avisos, checklist,
+    troubleshooting), Markdown ou um arquivo .docx para download.
     """
     from app.services.enhance import generate_structured_documentation
     from app.services.export_from_markdown import structured_json_to_docx
@@ -3387,6 +3206,10 @@ async def generate_documentation(
     # ── Template support ──
     template_id = body.get("template_id")
     template_metadata = body.get("template_metadata") or {}
+    if template_id:
+        from app.admin.template_service import check_template_permission
+
+        check_template_permission(user, template_id)
     logger.info(
         "[generate-documentation] template_id=%r, output_format=%s",
         template_id,
@@ -3440,6 +3263,9 @@ async def generate_documentation(
 
     # Get API key
     api_key = _get_api_key(x_gemini_key or x_google_api_key)
+
+    # ── Credit debit: after validation, right before the AI call ──
+    _billing_user_id = _debit_user_credits(user, "/generate-documentation")
 
     # Generate structured documentation
     def work() -> dict:

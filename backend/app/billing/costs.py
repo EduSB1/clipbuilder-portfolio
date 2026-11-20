@@ -13,6 +13,7 @@ ENDPOINT_CREDIT_COST: dict[str, int] = {
     "/enhance-document": 3,
     "/generate-documentation": 3,
     "/format-and-export": 2,
+    "/agents/extract-steps": 3,
     "/videos/raw": 5,  # video upload (raw stream)
     "/videos/youtube": 5,  # YouTube import
     "default": 1,

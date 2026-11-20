@@ -11,6 +11,26 @@ jobs:
   backend:
     name: Backend (ruff + pytest)
     runs-on: ubuntu-latest
+    # Testes de autorização e cobrança rodam contra um Postgres real
+    # (ON CONFLICT, RETURNING e índices parciais não existem no SQLite).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: clipbuilder
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: clipbuilder_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U clipbuilder -d clipbuilder_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://clipbuilder:test@localhost:5432/clipbuilder_test
+      # Sem banco os testes falham em vez de serem pulados em silêncio.
+      CLIPBUILDER_REQUIRE_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
 
