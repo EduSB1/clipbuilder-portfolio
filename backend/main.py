@@ -27,15 +27,7 @@ import anyio
 # Carregar configurações e injetar chaves no ambiente antes de outros imports
 from app.core.config import settings as _app_settings
 
-try:
-    from agents.router import router as agents_router
-except Exception as _agents_import_err:
-    agents_router = None
-    logging.getLogger("clipbuilder").warning(
-        "Agents module unavailable (pydantic-ai not installed?): %s — "
-        "the /agents/* endpoints will be disabled but everything else works.",
-        _agents_import_err,
-    )
+# isort: split
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -54,6 +46,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+# pydantic-ai is a declared dependency: a failing import is a broken install
+# and must stop the app, not silently drop the /agents routes.
+from agents.router import router as agents_router
 from app.admin.router import router as admin_router
 from app.admin.usage_logger import log_ai_usage_background
 from app.auth.deps import (
@@ -460,8 +455,7 @@ app.include_router(clerk_webhook_router)
 app.include_router(billing_router)
 app.include_router(tools_router)
 app.include_router(local_jwt_router)
-if agents_router is not None:
-    app.include_router(agents_router)
+app.include_router(agents_router)
 
 app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
 app.add_exception_handler(Exception, _unhandled_exception_handler)

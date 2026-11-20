@@ -200,8 +200,12 @@ def _resolve_model() -> str:
 # CLIPBUILDER_AGENT_MODEL are respected even when the module is imported
 # before those vars are set.  The model can still be overridden at runtime
 # via agent.override(model=...) inside extract_steps().
+# defer_model_check: the model (and its API key) is resolved on the first
+# run, not at import. Without it, importing this module with no key raised
+# inside the Google client and the whole /agents router was dropped.
 step_extractor_agent: Agent[StepExtractionDeps, StepListOutput] = Agent(
     model=_resolve_model(),
+    defer_model_check=True,
     output_type=StepListOutput,
     system_prompt=_SYSTEM_PROMPT,
     deps_type=StepExtractionDeps,
