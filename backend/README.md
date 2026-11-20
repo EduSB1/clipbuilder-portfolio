@@ -62,7 +62,7 @@ Observações:
 ## Áudio-to-Text
 
 AI Analysis (Gemini):
-- Upload de vídeo: `POST /videos` (multipart: `video`) ou `POST /videos/raw` (raw body)
+- Upload de vídeo: `POST /videos/raw` (corpo bruto, inteiro ou em partes com `X-Upload-Id`, `X-Chunk-Index` e `X-Total-Chunks`)
 	- O backend salva o vídeo localmente.
 	- A cada `smart-text`, ele gera um clipe curto ao redor do timestamp e envia *apenas o clipe* ao Gemini.
 - Status: `GET /videos/{video_id}/status`

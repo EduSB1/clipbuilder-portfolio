@@ -17,7 +17,7 @@ ESSENTIAL_ROUTES = [
     "/health",
     "/auth/me",
     "/templates",
-    "/videos",
+    "/videos/raw",
     "/videos/youtube",
     "/videos/{video_id}/smart-text",
     "/export",

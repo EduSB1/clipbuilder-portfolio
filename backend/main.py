@@ -86,7 +86,6 @@ from app.core.constants import (
     MIN_CLIP_DURATION_SECONDS,
     MIN_FRAME_SCALE_HEIGHT,
     TIMESTAMP_ANALYSIS_WINDOW_SECONDS,
-    UPLOAD_CHUNK_SIZE_KB,
     VIDEO_ENCODE_CRF,
     WHISPER_SAMPLE_RATE_HZ,
     YTDLP_DEFAULT_TIMEOUT_SECONDS,
@@ -1899,91 +1898,6 @@ async def test_api_keys(
         logger.warning("test-api-keys: Gemini FALHOU: %s", msg)
 
     return result
-
-
-@app.post("/videos")
-async def upload_video(
-    user: CurrentAuthorizedUser,
-    video: UploadFile = File(...),
-    x_google_api_key: str | None = Header(default=None, alias="X-Google-Api-Key"),
-):
-    filename = (video.filename or "").strip()
-    ext = Path(filename).suffix.lower()
-    content_type = (video.content_type or "").lower().strip()
-
-    content_type_to_ext = {
-        "video/mp4": ".mp4",
-        "video/x-matroska": ".mkv",
-        "application/x-matroska": ".mkv",
-    }
-
-    if ext == "" and content_type in content_type_to_ext:
-        ext = content_type_to_ext[content_type]
-
-    if ext not in {".mp4", ".mkv"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Formato inválido. Use .mp4 ou .mkv (filename='{filename}', content_type='{content_type}')",
-        )
-
-    video_id = uuid.uuid4().hex
-    target_path = DATA_DIR / f"video_{video_id}{ext}"
-
-    # Same price as the raw upload: this route is an alternative way in, not
-    # a free one. Charged only after the cheap validations above.
-    _billing_user_id = _debit_user_credits(user, "/videos/raw")
-
-    total = 0
-    try:
-        with target_path.open("wb") as f:
-            while True:
-                chunk = await video.read(UPLOAD_CHUNK_SIZE_KB * 1024)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if total > MAX_VIDEO_BYTES:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=(
-                            f"Vídeo muito grande (limite atual: {MAX_VIDEO_MB} MB). "
-                            "Ajuste CLIPBUILDER_MAX_VIDEO_BYTES no backend/.env."
-                        ),
-                    )
-                f.write(chunk)
-    except HTTPException:
-        _refund_user_credits(_billing_user_id, "/videos/raw")
-        target_path.unlink(missing_ok=True)
-        raise
-    except OSError as exc:
-        _refund_user_credits(_billing_user_id, "/videos/raw")
-        target_path.unlink(missing_ok=True)
-        if getattr(exc, "errno", None) == ENOSPC:
-            logger.error(
-                "disk full while saving upload to %s", target_path, exc_info=True
-            )
-            raise HTTPException(
-                status_code=507,
-                detail=(
-                    "Sem espaço em disco para salvar o vídeo. "
-                    "Ajuste CLIPBUILDER_DATA_DIR para um caminho com espaço suficiente."
-                ),
-            ) from exc
-        logger.error("os error while saving upload to %s", target_path, exc_info=True)
-        raise
-    finally:
-        try:
-            await video.close()
-        except Exception:
-            pass
-
-    # For very large videos, we keep the original locally and only send a short clip to Gemini on demand.
-    video_store.register_video(video_id, user["id"], target_path.name)
-    with _videos_lock:
-        _videos[video_id] = VideoEntry(path=target_path, status="ready")
-
-    await _run_blocking(_cleanup_videos)
-
-    return {"video_id": video_id, "status": "ready"}
 
 
 _UPLOAD_ID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")

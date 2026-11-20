@@ -20,7 +20,6 @@ from tests.conftest import auth_header
 PROTECTED_ROUTES: list[tuple[str, str, dict[str, Any]]] = [
     ("GET", "/ai-keys-status", {}),
     ("POST", "/test-api-keys", {}),
-    ("POST", "/videos", {"files": {"video": ("a.mp4", b"x", "video/mp4")}}),
     ("POST", "/videos/raw", {"content": b"x", "headers": {"X-Filename": "a.mp4"}}),
     ("POST", "/videos/youtube", {"json": {"url": "https://youtu.be/abc"}}),
     ("GET", "/videos/abc/status", {}),
@@ -155,12 +154,10 @@ def test_raw_upload_with_invalid_extension_is_not_charged(client: Any, db: Any, 
     assert _balance(db, user) == 10
 
 
-def test_multipart_upload_is_charged_like_raw_upload(client: Any, db: Any, make_user: Any) -> None:
-    user = make_user(credits=10)
-    response = client.post(
-        "/videos",
-        files={"video": ("tela.mp4", io.BytesIO(b"\x00" * 64), "video/mp4")},
-        headers=auth_header(user),
+def test_multipart_upload_route_no_longer_exists() -> None:
+    # O frontend só usa /videos/raw (streaming). A rota multipart era um
+    # segundo caminho de upload de até 6 GiB que ninguém usava.
+    response = TestClient(main.app).post(
+        "/videos", files={"video": ("tela.mp4", io.BytesIO(b"\x00" * 64), "video/mp4")}
     )
-    assert response.status_code == 200, response.text
-    assert _balance(db, user) == 5
+    assert response.status_code in (404, 405)
