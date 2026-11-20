@@ -208,20 +208,11 @@ export default function VideoArea({
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1.5">
-                        ⚠️ YouTube bloqueou o download neste servidor
+                        Não foi possível importar este vídeo do YouTube agora
                       </p>
                       <p className="text-xs text-amber-700 dark:text-amber-300 leading-relaxed mb-3">
-                        O YouTube identificou o servidor como bot. Soluções: (1)
-                        Configure cookies de autenticação via{" "}
-                        <code className="px-1 py-0.5 rounded bg-amber-200/60 dark:bg-amber-800/60 font-mono text-[10px]">
-                          setup_youtube_cookies.sh
-                        </code>
-                        , (2) Configure um proxy residencial em{" "}
-                        <code className="px-1 py-0.5 rounded bg-amber-200/60 dark:bg-amber-800/60 font-mono text-[10px]">
-                          CLIPBUILDER_YTDLP_PROXY
-                        </code>
-                        , ou (3) Faça upload do vídeo manualmente (.mp4 ou
-                        .mkv).
+                        O YouTube recusou o download. Envie o arquivo do vídeo
+                        (.mp4 ou .mkv) para continuar.
                       </p>
                       <div className="flex flex-wrap items-center gap-2">
                         <button
@@ -232,14 +223,6 @@ export default function VideoArea({
                           <Upload className="h-3.5 w-3.5" />
                           Fazer upload manual
                         </button>
-                        <a
-                          href="https://github.com/nicholasgcoles/ClipBuilder#youtube-cookies"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium border border-amber-400 dark:border-amber-600 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
-                        >
-                          📖 Configurar cookies
-                        </a>
                         <button
                           type="button"
                           onClick={() => onDismissError?.()}

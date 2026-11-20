@@ -2747,7 +2747,7 @@ async def enhance_document(
         raise HTTPException(status_code=400, detail=f"JSON inválido: {exc}") from exc
 
     title = (body.get("title") or "Documento Sem Título").strip()
-    template_id = body.get("template_id")  # wolbito_it, wolbito_pop, or None
+    template_id = body.get("template_id")  # corporate_it, corporate_pop, or None
 
     # ── Template permission enforcement ──
     if template_id:
@@ -2837,14 +2837,14 @@ async def markdown_to_docx_endpoint(
     user: CurrentAuthorizedUser,
 ):
     """
-    Converte markdown em ficheiro .docx.
+    Converte markdown em arquivo .docx.
     Body JSON: {
         "markdown": "...",
         "title": "opcional",
         "professional": true/false,
-        "template_id": "clipbuilder_pro" | "wolbito_it" | "wolbito_pop" (opcional),
+        "template_id": "clipbuilder_pro" | "corporate_it" | "corporate_pop" (opcional),
         "template_metadata": {                       (opcional – usado com templates corporativos)
-            "document_code": "IT-TI-INF-0002",
+            "document_code": "IT-XX-XXX-0000",
             "revision": "00",
             "expiration_period": "1 ano",
             "elaboration_date": "14/08/2025",
@@ -2854,7 +2854,7 @@ async def markdown_to_docx_endpoint(
         }
     }.
 
-    Se template_id for um template corporativo (wolbito_it, wolbito_pop), usa o
+    Se template_id for um template corporativo (corporate_it, corporate_pop), usa o
     builder corporativo com cabeçalho, logo e rodapé de responsáveis.
 
     Se template_id for "clipbuilder_pro" ou ausente e professional=true (padrão),
@@ -2862,7 +2862,7 @@ async def markdown_to_docx_endpoint(
 
     Se professional=false, gera documento simples.
 
-    Devolve o ficheiro .docx para download.
+    Devolve o arquivo .docx para download.
     """
     from app.services.export_from_markdown import markdown_to_docx, markdown_to_docx_pro
 
@@ -2978,9 +2978,9 @@ async def markdown_to_docx_endpoint(
 @app.post("/markdown-to-pdf")
 async def markdown_to_pdf_endpoint(request: Request, user: CurrentAuthorizedUser):
     """
-    Converte markdown em ficheiro .pdf.
+    Converte markdown em arquivo .pdf.
     Body JSON: { "markdown": "...", "title": "opcional" }.
-    Devolve o ficheiro .pdf para download.
+    Devolve o arquivo .pdf para download.
     """
     from app.services.export_from_markdown import markdown_to_pdf_via_libreoffice
 
@@ -3037,9 +3037,9 @@ async def markdown_to_pdf_endpoint(request: Request, user: CurrentAuthorizedUser
 @app.post("/markdown-to-html")
 async def markdown_to_html_endpoint(request: Request, user: CurrentAuthorizedUser):
     """
-    Converte markdown em ficheiro .html (capa, sumário, callouts, rodapé).
+    Converte markdown em arquivo .html (capa, sumário, callouts, rodapé).
     Body JSON: { "markdown": "...", "title": "opcional", "subtitle": "opcional", "image_map": "opcional" }.
-    Devolve o ficheiro .html para download.
+    Devolve o arquivo .html para download.
     """
     try:
         from app.services.export_from_markdown import markdown_to_html
@@ -3197,7 +3197,7 @@ async def format_and_export(
         )
     _require_export_permission(user, fmt)
 
-    # Extrair texto (ficheiro ou markdown)
+    # Extrair texto (arquivo ou markdown)
     try:
         raw_text = await extract_text_from_document(file=file, markdown_text=markdown)
     except ValueError as exc:

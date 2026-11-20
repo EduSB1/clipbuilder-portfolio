@@ -273,10 +273,10 @@ api.interceptors.response.use(
 /**
  * Converte markdown em .docx e dispara o download no browser.
  * @param {string} markdown - Conteúdo em markdown
- * @param {string} [filename] - Nome do ficheiro (ex: "documento_profissional.docx")
+ * @param {string} [filename] - Nome do arquivo (ex: "documento_profissional.docx")
  * @param {boolean} [professional=true] - Se true, gera documento com formatação profissional
  * @param {Record<string, string>} [imageMap] - Mapa nome -> path ou base64 para [Imagem: Nome] / ![alt](...)
- * @param {string} [templateId] - ID do template corporativo (wolbito_it, wolbito_pop, clipbuilder_pro)
+ * @param {string} [templateId] - ID do template corporativo (corporate_it, corporate_pop, clipbuilder_pro)
  * @param {Record<string, string>} [templateMetadata] - Metadados corporativos (document_code, revision, etc.)
  */
 export async function downloadMarkdownAsDocx(
@@ -354,7 +354,7 @@ export async function downloadMarkdownAsDocx(
 /**
  * Converte markdown em .pdf e dispara o download no browser.
  * @param {string} markdown - Conteúdo em markdown
- * @param {string} [filename] - Nome do ficheiro (ex: "documento.pdf")
+ * @param {string} [filename] - Nome do arquivo (ex: "documento.pdf")
  * @param {Record<string, string>} [imageMap] - Mapa nome -> path ou base64 para [Imagem: Nome]
  */
 export async function downloadMarkdownAsPdf(
@@ -406,7 +406,7 @@ export async function downloadMarkdownAsPdf(
 /**
  * Converte markdown em .html e dispara o download no browser.
  * @param {string} markdown - Conteúdo em markdown
- * @param {string} [filename] - Nome do ficheiro (ex: "documento.html")
+ * @param {string} [filename] - Nome do arquivo (ex: "documento.html")
  */
 export async function downloadMarkdownAsHtml(
   markdown,

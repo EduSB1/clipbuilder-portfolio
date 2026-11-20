@@ -69,7 +69,7 @@ DEFAULT_SEED = [
     ("smtp", "password", "", "string", "Senha SMTP"),
     ("smtp", "use_tls", "true", "boolean", "Usar TLS"),
     ("smtp", "from_email", "", "string", "Email remetente (deve ser igual ao e-mail de autenticação)"),
-    ("smtp", "frontend_url", "", "string", "URL pública do frontend (ex: http://192.168.18.200:8081)"),
+    ("smtp", "frontend_url", "", "string", "URL pública do frontend (ex: https://app.suaempresa.com.br)"),
     ("storage", "max_video_size_gb", "6", "number", "Tamanho máximo de vídeo (GB)"),
     ("storage", "cleanup_days", "30", "number", "Dias para limpar vídeos antigos"),
     ("storage", "total_quota_gb", "1000", "number", "Quota total de storage (GB)"),

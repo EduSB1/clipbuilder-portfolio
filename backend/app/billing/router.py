@@ -279,6 +279,11 @@ async def billing_checkout_pix(
 
     user_id = user.get("id", "")
     user_email = user.get("email", "")
+    if not user_email:
+        raise HTTPException(
+            status_code=400,
+            detail="Sua conta não tem e-mail cadastrado; ele é necessário para o pagamento via Pix.",
+        )
 
     package_id = body.package_id.strip()
     if package_id not in _PACKAGES_BY_ID:
@@ -302,7 +307,9 @@ async def billing_checkout_pix(
         "description": f"ClipBuilder — {package['label']} ({package['credits']} créditos)",
         "payment_method_id": "pix",
         "payer": {
-            "email": user_email or "cliente@clipbuilder.com",
+            # Sem fallback fixo: o Mercado Pago manda o comprovante para este
+            # endereço, e o fallback antigo era um e-mail fixo num domínio de terceiros.
+            "email": user_email,
         },
         "metadata": {
             "user_id": user_id,

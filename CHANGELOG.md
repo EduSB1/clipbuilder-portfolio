@@ -90,7 +90,7 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
   referenciado — o Docker sempre rodou `main:app`.
 - Componentes React órfãos: `auth/AdminRoute`, `auth/ProtectedRoute`,
   `auth/ClerkProviderWrapper`, `shared/Button` e `components/SettingsModal`.
-- Arquivos de trabalho que estavam versionados: `Wolbito.docx`, `groq_matches.txt`,
+- Arquivos de trabalho que estavam versionados: um documento de terceiro, `groq_matches.txt`,
   `debug_index.html`, `teste.py`, `Aba Validação de Usuários Clerk` e o template
   DOCX antigo.
 - Workflow `teste.yml`, que apenas imprimia uma mensagem.

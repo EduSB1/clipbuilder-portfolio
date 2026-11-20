@@ -42,7 +42,7 @@ function AdminRoute({ children }) {
     if (!isLoaded)
         return (
             <AuthLoading
-                message="A verificar permissões..."
+                message="Verificando permissões..."
                 error={authError}
                 onRetry={refreshProfile}
             />

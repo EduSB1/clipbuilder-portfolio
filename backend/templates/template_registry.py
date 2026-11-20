@@ -5,7 +5,7 @@ Each template is a dict with metadata (id, name, description, thumbnail hint,
 structure sections) that the frontend can display and the export engine can
 use to build the final DOCX/PDF.
 
-Two corporate templates based on Wolbito do Brasil standards:
+Two corporate templates based on quality-management document standards:
   1. IT  – Instrução de Trabalho (concise, step-by-step with screenshots)
   2. POP – Procedimento Operacional Padrão (full formal document)
 
@@ -23,12 +23,10 @@ from typing import Any
 # ---------------------------------------------------------------------------
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent
-# Pasta centralizada de ícones/logos (ClipBuilder/Icons/)
-_ICONS_DIR = Path(__file__).resolve().parent.parent.parent / "Icons"
 
-WOLBITO_LOGO_BLUE = _ICONS_DIR / "wolbito_logo_blue.png"
-WOLBITO_LOGO_WHITE = _ICONS_DIR / "wolbito_logo_white.png"
-CLIPBUILDER_ICON = _ICONS_DIR / "clipbuilder_icon.png"
+# Logo dos templates embutidos (o mesmo do app). Para usar o logo da sua
+# empresa, substitua este arquivo ou importe um template pelo painel admin.
+CLIPBUILDER_ICON = _TEMPLATES_DIR / "clipbuilder_icon.png"
 
 
 # ---------------------------------------------------------------------------
@@ -111,12 +109,12 @@ TEMPLATE_CLIPBUILDER_PRO = DocumentTemplate(
     },
 )
 
-TEMPLATE_WOLBITO_IT = DocumentTemplate(
-    id="wolbito_it",
-    name="Wolbito – Instrução de Trabalho (IT)",
+TEMPLATE_CORPORATE_IT = DocumentTemplate(
+    id="corporate_it",
+    name="Instrução de Trabalho (IT)",
     short_name="IT",
     description=(
-        "Instrução de Trabalho padrão Wolbito do Brasil. "
+        "Instrução de Trabalho no padrão de gestão da qualidade. "
         "Formato conciso com cabeçalho corporativo (logo, código, revisão), "
         "seções de Introdução e Procedimento com capturas de tela, "
         "e rodapé de responsáveis."
@@ -124,7 +122,7 @@ TEMPLATE_WOLBITO_IT = DocumentTemplate(
     icon="📋",
     category="corporate",
     has_logo=True,
-    logo_path=str(WOLBITO_LOGO_BLUE),
+    logo_path=str(CLIPBUILDER_ICON),
     header_fields=[
         "document_code",
         "revision",
@@ -171,12 +169,12 @@ TEMPLATE_WOLBITO_IT = DocumentTemplate(
     },
 )
 
-TEMPLATE_WOLBITO_POP = DocumentTemplate(
-    id="wolbito_pop",
-    name="Wolbito – Procedimento Operacional Padrão (POP)",
+TEMPLATE_CORPORATE_POP = DocumentTemplate(
+    id="corporate_pop",
+    name="Procedimento Operacional Padrão (POP)",
     short_name="POP",
     description=(
-        "Procedimento Operacional Padrão completo da Wolbito do Brasil. "
+        "Procedimento Operacional Padrão completo. "
         "Inclui Introdução, Objetivo, Abrangência, Referências, Definições, "
         "Símbolos e Abreviaturas, Responsabilidades, Metodologia, "
         "Desvios e Ações, e Documentos Relacionados. "
@@ -185,7 +183,7 @@ TEMPLATE_WOLBITO_POP = DocumentTemplate(
     icon="📑",
     category="corporate",
     has_logo=True,
-    logo_path=str(WOLBITO_LOGO_BLUE),
+    logo_path=str(CLIPBUILDER_ICON),
     header_fields=[
         "document_code",
         "revision",
@@ -241,8 +239,8 @@ TEMPLATE_WOLBITO_POP = DocumentTemplate(
 
 _TEMPLATES: dict[str, DocumentTemplate] = {
     TEMPLATE_CLIPBUILDER_PRO.id: TEMPLATE_CLIPBUILDER_PRO,
-    TEMPLATE_WOLBITO_IT.id: TEMPLATE_WOLBITO_IT,
-    TEMPLATE_WOLBITO_POP.id: TEMPLATE_WOLBITO_POP,
+    TEMPLATE_CORPORATE_IT.id: TEMPLATE_CORPORATE_IT,
+    TEMPLATE_CORPORATE_POP.id: TEMPLATE_CORPORATE_POP,
 }
 
 DEFAULT_TEMPLATE_ID = TEMPLATE_CLIPBUILDER_PRO.id

@@ -2006,9 +2006,9 @@ export default function Dashboard() {
                                                             className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shadow-sm"
                                                             style={{ backgroundColor: "#1F4E79", color: "#fff" }}
                                                         >
-                                                            {selectedTemplateId === "wolbito_it"
+                                                            {selectedTemplateId === "corporate_it"
                                                                 ? "📋 IT"
-                                                                : selectedTemplateId === "wolbito_pop"
+                                                                : selectedTemplateId === "corporate_pop"
                                                                   ? "📑 POP"
                                                                   : selectedTemplateId}
                                                         </span>
@@ -2026,7 +2026,7 @@ export default function Dashboard() {
                                                     aria-haspopup="menu"
                                                     aria-expanded={docProDropdownOpen}
                                                     aria-label="Doc Pro — abrir opções de formato"
-                                                    title={`Doc Pro: gerar documento e escolher formato (MD, DOCX, HTML, PDF) — Template: ${selectedTemplateId === "wolbito_it" ? "Wolbito IT" : selectedTemplateId === "wolbito_pop" ? "Wolbito POP" : "ClipBuilder Pro"}`}
+                                                    title={`Doc Pro: gerar documento e escolher formato (MD, DOCX, HTML, PDF) — Template: ${selectedTemplateId === "corporate_it" ? "IT" : selectedTemplateId === "corporate_pop" ? "POP" : "ClipBuilder Pro"}`}
                                                 >
                                                     <div className="docpro-icon-wrapper" aria-hidden="true">
                                                         {enhanceLoading ? (

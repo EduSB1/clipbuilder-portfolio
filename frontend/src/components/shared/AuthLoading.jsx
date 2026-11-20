@@ -5,7 +5,7 @@
  * importá-la sem criar um ciclo de importação com o roteador.
  */
 export default function AuthLoading({
-    message = "A verificar sessão...",
+    message = "Verificando sessão...",
     error = null,
     onRetry = null,
 }) {
@@ -23,7 +23,7 @@ export default function AuthLoading({
                             className="text-sm mb-8 leading-relaxed"
                             style={{ color: "var(--text-secondary)" }}
                         >
-                            {error.message || "Ocorreu um erro ao contactar o servidor."}
+                            {error.message || "Não foi possível falar com o servidor."}
                         </p>
 
                         <div className="flex flex-col gap-3">

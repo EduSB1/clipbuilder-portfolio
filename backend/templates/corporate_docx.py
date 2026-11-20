@@ -1,8 +1,8 @@
 """
-Corporate DOCX Builder – generates Word documents that follow the Wolbito do Brasil
-corporate templates (IT – Instrução de Trabalho and POP – Procedimento Operacional Padrão).
+Corporate DOCX Builder – generates Word documents that follow the corporate
+templates (IT – Instrução de Trabalho and POP – Procedimento Operacional Padrão).
 
-Reference layout (from real Wolbito documents):
+Reference layout (quality-management IT/POP documents):
   ┌────────────┬─────────────────────────────────────────────────────┐
   │            │              TÍTULO DO DOCUMENTO                    │
   │   [Logo]   ├─────────────────────────────┬──────────────────────┤
@@ -329,13 +329,15 @@ def _set_paragraph_spacing(
 # ---------------------------------------------------------------------------
 
 
-def _add_text_logo_fallback(paragraph, font_name: str = "Arial"):
-    """Fallback quando o logo não é encontrado."""
+def _add_text_logo_fallback(paragraph, font_name: str = "Arial", text: str = ""):
+    """Fallback quando o logo não é encontrado: o nome da empresa, se configurado."""
+    if not text:
+        return
     d = _import_docx()
     Pt = d["Pt"]
     RGBColor = d["RGBColor"]
 
-    run = paragraph.add_run("Wolbito\ndo Brasil")
+    run = paragraph.add_run(text)
     run.font.name = font_name
     run.font.bold = True
     run.font.size = Pt(10)
@@ -432,6 +434,8 @@ def _build_header_table_for_header_footer(
     p_logo.paragraph_format.space_after = 0
 
     logo_path = None
+    # Shown in place of a missing logo; set it in the template config.
+    company_name = str((getattr(template, "config", None) or {}).get("company_name", ""))
     if getattr(template, "has_logo", False):
         logo_path = _find_logo(getattr(template, "logo_path", None))
 
@@ -446,9 +450,9 @@ def _build_header_table_for_header_footer(
             )
         except Exception as e:
             logger.error("Erro ao inserir logo: %s", e)
-            _add_text_logo_fallback(p_logo, font_name=font_name)
+            _add_text_logo_fallback(p_logo, font_name=font_name, text=company_name)
     else:
-        _add_text_logo_fallback(p_logo, font_name=font_name)
+        _add_text_logo_fallback(p_logo, font_name=font_name, text=company_name)
 
     # Título
     _set_cell_vertical_alignment(title_cell, "center")
@@ -668,7 +672,7 @@ def _add_section_heading(
     doc, text: str, level: int, template, section_number: str | None = None
 ):
     """
-    Add a section heading matching the Wolbito reference style:
+    Add a section heading matching the corporate reference style:
     - Level 1: bold, black, ~13pt, number + tab + text (e.g. "1.\tINTRODUÇÃO")
     - Level 2: bold, black, ~11pt
     - Level 3: bold, black, ~11pt, italic
@@ -845,7 +849,7 @@ def corporate_markdown_to_docx(
     title: str = "Documento",
 ) -> bytes:
     """
-    Convert markdown text into a DOCX file using the Wolbito corporate template.
+    Convert markdown text into a DOCX file using a corporate (IT/POP) template.
     """
     d = _import_docx()
     Document = d["Document"]
@@ -1165,7 +1169,7 @@ def corporate_structured_to_docx(
 ) -> bytes:
     """
     Convert structured JSON documentation into a DOCX file using the
-    Wolbito corporate template layout.
+    corporate (IT/POP) template layout.
     """
     d = _import_docx()
     Document = d["Document"]
@@ -1194,7 +1198,7 @@ def corporate_structured_to_docx(
     # ── INTRODUCTION ──
     visao_geral = data.get("visao_geral", "")
 
-    if template.id == "wolbito_pop":
+    if template.id == "corporate_pop":
         if visao_geral:
             section_num += 1
             _add_section_heading(
@@ -1239,7 +1243,7 @@ def corporate_structured_to_docx(
     if passos:
         section_num += 1
         proc_num = section_num
-        proc_title = "METODOLOGIA" if template.id == "wolbito_pop" else "PROCEDIMENTO"
+        proc_title = "METODOLOGIA" if template.id == "corporate_pop" else "PROCEDIMENTO"
         _add_section_heading(
             doc, proc_title, 1, template, str(proc_num) if numbering else None
         )
@@ -1282,7 +1286,7 @@ def corporate_structured_to_docx(
                 run_img.font.color.rgb = RGBColor(0x80, 0x80, 0x80)
 
     # ── DESVIOS E AÇÕES (POP only) ──
-    if template.id == "wolbito_pop":
+    if template.id == "corporate_pop":
         section_num += 1
         _add_section_heading(
             doc, "DESVIOS E AÇÕES", 1, template, str(section_num) if numbering else None
@@ -1396,7 +1400,7 @@ def corporate_structured_to_docx(
                         run.font.size = Pt(10)
 
     # ── ANEXOS / DOCUMENTOS RELACIONADOS ──
-    if template.id == "wolbito_pop":
+    if template.id == "corporate_pop":
         section_num += 1
         _add_section_heading(
             doc,

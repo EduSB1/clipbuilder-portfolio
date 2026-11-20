@@ -213,7 +213,7 @@ function ClerkBackedAuthProvider({ children }) {
           console.error("AuthContext: server unreachable or network error:", err);
           setBackendUser(null);
           setAuthError({
-            message: "Não foi possível contactar o servidor. Verifique a sua ligação.",
+            message: "Não foi possível falar com o servidor. Verifique sua conexão.",
             code: status || "NETWORK_ERROR"
           });
         }

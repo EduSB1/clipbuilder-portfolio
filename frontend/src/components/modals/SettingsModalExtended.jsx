@@ -153,7 +153,7 @@ export default function SettingsModalExtended({
     };
 
     const metaFieldPlaceholders = {
-        document_code: "Ex: IT-TI-INF-0002",
+        document_code: "Ex: IT-XX-XXX-0000",
         revision: "Ex: 00",
         expiration_period: "Ex: 1 ano",
         elaboration_date: "Ex: 14/08/2025",

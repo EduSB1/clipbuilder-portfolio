@@ -85,14 +85,6 @@ Desktop.ini
 # ─── Local scratch files ─────────────────────────────────────────────────────
 *.tmp
 scratch/
-groq_matches.txt
-debug_index.html
-teste.py
-Wolbito.docx
-Aba Validação de Usuários Clerk
-
-# Legacy template kept only as a local reference
-backend/templates/Old Template_*.docx
 
 # Local debugging scratch files
 backend/scratch/

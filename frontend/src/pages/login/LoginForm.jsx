@@ -296,7 +296,7 @@ export default function LoginForm() {
                                 ? "Quase lá" 
                                 : isSignUpMode 
                                     ? "Comece sua jornada" 
-                                    : "Portal Corporativo"}
+                                    : "Acesse sua conta"}
                     </p>
                     <h1 className={styles.title}>
                         {isResettingPassword 
@@ -383,7 +383,7 @@ export default function LoginForm() {
                             <span className={styles.googleIcon} aria-hidden="true">
                                 G
                             </span>
-                            <span>{googleLoading ? "A redirecionar..." : "Continuar com Google"}</span>
+                            <span>{googleLoading ? "Redirecionando..." : "Continuar com Google"}</span>
                         </button>
 
                         <div className={`${styles.divider} ${styles.dividerWrap}`}>

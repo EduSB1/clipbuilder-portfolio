@@ -441,7 +441,7 @@ class AiToolLog(Base):
 class DocumentTemplateDef(Base):
     """Persistent document template definition.
 
-    Built-in templates (clipbuilder_pro,  _it, wolbito_pop) are seeded
+    Built-in templates (clipbuilder_pro, corporate_it, corporate_pop) are seeded
     on startup.  Admins can import additional templates via the UI.
     """
 

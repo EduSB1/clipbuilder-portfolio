@@ -87,14 +87,14 @@ DOC_PRO_SYSTEM_PROMPT = (
 )
 
 # ---------------------------------------------------------------------------
-# Wolbito Corporate Template Prompts
+# Corporate template prompts (IT e POP)
 # ---------------------------------------------------------------------------
 
-WOLBITO_IT_SYSTEM_PROMPT = (
+CORPORATE_IT_SYSTEM_PROMPT = (
     "Você é um Redator Técnico Sênior especializado em Instruções de Trabalho (IT) "
-    "seguindo o padrão corporativo Wolbito do Brasil.\n\n"
+    "seguindo um padrão corporativo de gestão da qualidade.\n\n"
     "MISSÃO: Transformar os passos fornecidos em uma Instrução de Trabalho (IT) "
-    "formatada em Markdown que segue EXATAMENTE a estrutura corporativa Wolbito.\n\n"
+    "formatada em Markdown que segue EXATAMENTE a estrutura corporativa definida abaixo.\n\n"
     "REGRAS CRÍTICAS:\n"
     "1. EXPANDA cada passo em descrição detalhada - não resuma, DETALHE.\n"
     "2. Se o passo menciona interface, campos, botões ou telas, DESCREVA cada elemento.\n"
@@ -127,11 +127,11 @@ WOLBITO_IT_SYSTEM_PROMPT = (
     "Idioma: pt-BR. Tom: formal e técnico."
 )
 
-WOLBITO_POP_SYSTEM_PROMPT = (
+CORPORATE_POP_SYSTEM_PROMPT = (
     "Você é um Redator Técnico Sênior especializado em Procedimentos Operacionais Padrão (POP) "
-    "seguindo o padrão corporativo Wolbito do Brasil.\n\n"
+    "seguindo um padrão corporativo de gestão da qualidade.\n\n"
     "MISSÃO: Transformar os passos fornecidos em um POP (Procedimento Operacional Padrão) "
-    "formatado em Markdown que segue EXATAMENTE a estrutura corporativa Wolbito.\n\n"
+    "formatado em Markdown que segue EXATAMENTE a estrutura corporativa definida abaixo.\n\n"
     "REGRAS CRÍTICAS:\n"
     "1. EXPANDA cada passo em descrição detalhada - não resuma, DETALHE.\n"
     "2. Se o passo menciona interface, campos, botões ou telas, DESCREVA cada elemento.\n"
@@ -322,7 +322,7 @@ def build_doc_pro_prompt(
 ) -> str:
     """Constrói o prompt para o Doc Pro (Gemini).
 
-    Se template_id for um template corporativo Wolbito, gera o prompt
+    Se template_id for um template corporativo (IT ou POP), gera o prompt
     adaptado à estrutura esperada pelo corporate_markdown_to_docx.
     """
     steps_text = _truncate_steps_text(steps)
@@ -330,13 +330,13 @@ def build_doc_pro_prompt(
     # Contar passos com imagem para referência
     steps_with_image = sum(1 for s in steps if s.get("has_image", False))
 
-    # ── Wolbito IT ──
-    if template_id == "wolbito_it":
-        return _build_wolbito_it_prompt(title, steps, steps_text, steps_with_image)
+    # ── Instrução de Trabalho (IT) ──
+    if template_id == "corporate_it":
+        return _build_corporate_it_prompt(title, steps, steps_text, steps_with_image)
 
-    # ── Wolbito POP ──
-    if template_id == "wolbito_pop":
-        return _build_wolbito_pop_prompt(title, steps, steps_text, steps_with_image)
+    # ── Procedimento Operacional Padrão (POP) ──
+    if template_id == "corporate_pop":
+        return _build_corporate_pop_prompt(title, steps, steps_text, steps_with_image)
 
     # ── Default Doc Pro ──
     return f"""TÍTULO DO DOCUMENTO: {title}
@@ -376,12 +376,12 @@ INSTRUÇÕES DE GERAÇÃO:
 Gere o documento Markdown completo agora:"""
 
 
-def _build_wolbito_it_prompt(
+def _build_corporate_it_prompt(
     title: str, steps: list[dict[str, Any]], steps_text: str, steps_with_image: int
 ) -> str:
-    """Prompt específico para Instrução de Trabalho (IT) Wolbito."""
+    """Prompt específico para Instrução de Trabalho (IT) corporativa."""
     return f"""TÍTULO DO DOCUMENTO: {title}
-TEMPLATE: Instrução de Trabalho (IT) — Padrão Corporativo Wolbito do Brasil
+TEMPLATE: Instrução de Trabalho (IT) — Padrão Corporativo
 
 INFORMAÇÕES DOS PASSOS CAPTURADOS:
 {steps_text}
@@ -483,12 +483,12 @@ REGRAS ADICIONAIS:
 Gere o documento Markdown completo agora:"""
 
 
-def _build_wolbito_pop_prompt(
+def _build_corporate_pop_prompt(
     title: str, steps: list[dict[str, Any]], steps_text: str, steps_with_image: int
 ) -> str:
-    """Prompt específico para POP (Procedimento Operacional Padrão) Wolbito."""
+    """Prompt específico para POP (Procedimento Operacional Padrão) corporativo."""
     return f"""TÍTULO DO DOCUMENTO: {title}
-TEMPLATE: Procedimento Operacional Padrão (POP) — Padrão Corporativo Wolbito do Brasil
+TEMPLATE: Procedimento Operacional Padrão (POP) — Padrão Corporativo
 
 INFORMAÇÕES DOS PASSOS CAPTURADOS:
 {steps_text}
@@ -758,10 +758,10 @@ Retorne APENAS o JSON válido, sem markdown code blocks:"""
 
 def _get_system_prompt_for_template(template_id: str | None) -> str:
     """Return the appropriate system prompt based on the template_id."""
-    if template_id == "wolbito_it":
-        return WOLBITO_IT_SYSTEM_PROMPT
-    if template_id == "wolbito_pop":
-        return WOLBITO_POP_SYSTEM_PROMPT
+    if template_id == "corporate_it":
+        return CORPORATE_IT_SYSTEM_PROMPT
+    if template_id == "corporate_pop":
+        return CORPORATE_POP_SYSTEM_PROMPT
     return DOC_PRO_SYSTEM_PROMPT
 
 
@@ -777,7 +777,7 @@ def enhance_document_with_gemini(
     Parameters
     ----------
     template_id : str | None
-        Se "wolbito_it" ou "wolbito_pop", usa prompts específicos para gerar
+        Se "corporate_it" ou "corporate_pop", usa prompts específicos para gerar
         markdown na estrutura esperada pelo corporate_markdown_to_docx.
     """
     try:
@@ -796,10 +796,10 @@ def enhance_document_with_gemini(
     logger.info(
         "enhance_document_with_gemini: template_id=%s, system_prompt=%s",
         template_id,
-        "WOLBITO_IT"
-        if template_id == "wolbito_it"
-        else "WOLBITO_POP"
-        if template_id == "wolbito_pop"
+        "CORPORATE_IT"
+        if template_id == "corporate_it"
+        else "CORPORATE_POP"
+        if template_id == "corporate_pop"
         else "DOC_PRO",
     )
 

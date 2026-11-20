@@ -31,7 +31,7 @@ async def extract_text_from_document(
     markdown_text: str | None = None,
 ) -> str:
     """
-    Extrai texto a partir de markdown (string), ou de um ficheiro .md, .docx ou .pdf.
+    Extrai texto a partir de markdown (string), ou de um arquivo .md, .docx ou .pdf.
 
     Args:
         file: Ficheiro enviado (opcional).
@@ -41,7 +41,7 @@ async def extract_text_from_document(
         Texto bruto para envio ao Gemini.
 
     Raises:
-        ValueError: Se nem file nem markdown_text forem fornecidos, ou se o ficheiro
+        ValueError: Se nem file nem markdown_text forem fornecidos, ou se o arquivo
                     for inválido (extensão ou tamanho).
     """
     if markdown_text is not None and markdown_text.strip():
@@ -49,14 +49,14 @@ async def extract_text_from_document(
 
     if file is None or not file.filename:
         raise ValueError(
-            "É necessário fornecer 'markdown' (texto) ou enviar um ficheiro .md, .docx ou .pdf."
+            "É necessário fornecer 'markdown' (texto) ou enviar um arquivo .md, .docx ou .pdf."
         )
 
     filename = file.filename
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise ValueError(
-            f"Formato de ficheiro não suportado: {ext}. Use .md, .docx ou .pdf."
+            f"Formato de arquivo não suportado: {ext}. Use .md, .docx ou .pdf."
         )
 
     raw_bytes = await file.read()
@@ -65,7 +65,7 @@ async def extract_text_from_document(
             f"Ficheiro demasiado grande (máx. {MAX_FILE_BYTES // (1024 * 1024)} MB)."
         )
     if len(raw_bytes) == 0:
-        raise ValueError("O ficheiro está vazio.")
+        raise ValueError("O arquivo está vazio.")
 
     if ext == ".md":
         try:
@@ -74,7 +74,7 @@ async def extract_text_from_document(
             try:
                 return raw_bytes.decode("latin-1").strip()
             except Exception as e:
-                raise ValueError(f"Falha ao ler ficheiro .md: {e}") from e
+                raise ValueError(f"Falha ao ler arquivo .md: {e}") from e
 
     if ext == ".docx":
         return _extract_text_from_docx(raw_bytes)
