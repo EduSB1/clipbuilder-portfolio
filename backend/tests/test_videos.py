@@ -117,6 +117,24 @@ class TestChunkedUpload:
         assert (isolated_storage / f"video_{done['video_id']}.mp4").read_bytes() == b"AAABBB"
         assert not list(isolated_storage.glob("upload_*.part"))
 
+    def test_retried_first_chunk_is_charged_once(self, client: Any, db: Any, make_user: Any) -> None:
+        # O frontend reenvia uma parte quando a resposta se perde na rede.
+        from app.billing.service import get_balance
+
+        owner = make_user(credits=20)
+        upload_id = str(uuid.uuid4())
+        assert _chunk(client, owner, upload_id, 0, 2, b"AAA").status_code == 200
+        assert _chunk(client, owner, upload_id, 0, 2, b"AAA").status_code == 200
+        assert _chunk(client, owner, upload_id, 1, 2, b"BBB").json()["status"] == "ready"
+        db.expire_all()
+        assert get_balance(db, owner.id) == 15
+
+    def test_first_chunk_without_credits_leaves_no_upload_behind(self, client: Any, make_user: Any) -> None:
+        owner = make_user(credits=0)
+        upload_id = str(uuid.uuid4())
+        assert _chunk(client, owner, upload_id, 0, 2).status_code == 402
+        assert upload_id not in main._uploads
+
     def test_another_user_cannot_add_parts(self, client: Any, make_user: Any) -> None:
         owner, intruder = make_user(credits=20), make_user(credits=20)
         upload_id = str(uuid.uuid4())

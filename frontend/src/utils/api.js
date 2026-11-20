@@ -212,9 +212,38 @@ const API_KEY_401_PATTERNS = [
   "/test-api-keys",
 ];
 
+// Rotas que cobram ou devolvem créditos. Ao terminarem (com sucesso ou não:
+// uma falha pode ter sido reembolsada), o saldo exibido é atualizado.
+export const CREDITS_CHANGED_EVENT = "clipbuilder:credits-changed";
+const CREDIT_ROUTES = [
+  "/smart-text",
+  "/describe-gif",
+  "/enhance-document",
+  "/generate-documentation",
+  "/format-and-export",
+  "/videos/raw",
+  "/videos/youtube",
+  "/agents/extract-steps",
+  "/billing/payment/",
+  "/billing/checkout/",
+];
+
+function notifyCreditsChanged(config) {
+  const url = (config?.url || "").toString();
+  if (CREDIT_ROUTES.some((p) => url.includes(p))) {
+    try {
+      window.dispatchEvent(new Event(CREDITS_CHANGED_EVENT));
+    } catch {}
+  }
+}
+
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    notifyCreditsChanged(res?.config);
+    return res;
+  },
   async (err) => {
+    notifyCreditsChanged(err?.config);
     const original = err.config;
     const url = (original?.url || "").toString();
 

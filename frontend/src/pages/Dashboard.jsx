@@ -14,7 +14,6 @@ import {
     restoreDashboardCache,
     hasDashboardCache,
     clearDashboardCache,
-    cacheSteps,
     removeCachedStepBlob,
     cacheSet,
 } from "../utils/sessionCache";
@@ -167,6 +166,27 @@ function formatTimestamp(seconds) {
     return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
 }
 
+// Envio de uma parte do vídeo. Cada parte tem até 10 min (o timeout global de
+// 120 s derrubava conexões abaixo de ~1,7 Mbps) e até 3 tentativas para falha
+// de rede ou erro 5xx. Erros 4xx (sem créditos, upload expirado, arquivo
+// grande demais) não são repetidos. Reenviar é seguro: o backend cobra o
+// upload uma única vez por X-Upload-Id.
+const CHUNK_TIMEOUT_MS = 10 * 60 * 1000;
+const CHUNK_RETRY_DELAYS_MS = [1000, 3000, 8000];
+
+async function postChunkWithRetry(chunk, config) {
+    for (let attempt = 0; ; attempt++) {
+        try {
+            return await api.post("/videos/raw", chunk, { ...config, timeout: CHUNK_TIMEOUT_MS });
+        } catch (err) {
+            const status = err?.response?.status;
+            const retryable = !config.signal?.aborted && (!status || status >= 500);
+            if (!retryable || attempt >= CHUNK_RETRY_DELAYS_MS.length) throw err;
+            await new Promise((resolve) => setTimeout(resolve, CHUNK_RETRY_DELAYS_MS[attempt]));
+        }
+    }
+}
+
 export default function Dashboard() {
     const { signOut, user: authUser } = useAppAuth();
     const videoRef = useRef(null);
@@ -175,6 +195,7 @@ export default function Dashboard() {
     const gifEncoderRef = useRef(null);
     const gifFrameIntervalRef = useRef(null);
     const videoFileRef = useRef(null); // arquivo de vídeo local (para cache)
+    const uploadAbortRef = useRef(null); // cancela o envio em andamento
     const cacheRestoredRef = useRef(false); // evita restaurar cache mais de uma vez
 
     const [videoUrl, setVideoUrl] = useState(null);
@@ -221,7 +242,8 @@ export default function Dashboard() {
     const [aiContext, setAiContext] = useState("");
     const [includeTimestamp, setIncludeTimestamp] = useState(() => {
         const v = lsGet(LS.includeTimestamp);
-        return v === undefined ? true : v === "true";
+        // Gravado como "1"/"0"; versões antigas gravavam "true"/"false".
+        return v === undefined ? true : v === "1" || v === "true";
     });
     const [savedPrompt, setSavedPrompt] = useState(() => {
         try {
@@ -420,17 +442,18 @@ export default function Dashboard() {
         };
     }, []);
 
-    // ── Cache: salvar incrementalmente quando steps mudam ──
+    // ── Cache: salvar o estado completo quando o trabalho muda ──
+    // Antes só os passos eram gravados aqui, sem marcar o cache como válido, e
+    // o resto (vídeo incluído) só no desmonte, que um F5 não dispara.
     useEffect(() => {
         if (!cacheRestoredRef.current) return;
         if (steps.length === 0 && !videoUrl) return;
         // Debounce: salvar 500ms após última mudança
         const timer = setTimeout(() => {
-            cacheSteps(steps).catch(() => {});
-            cacheSet("selectedStepId", selectedStepId);
+            saveDashboardCache(cacheStateRef.current).catch(() => {});
         }, 500);
         return () => clearTimeout(timer);
-    }, [steps, selectedStepId, videoUrl]);
+    }, [steps, selectedStepId, videoUrl, videoId, aiStatus, documentTitle, documentStatus, documentOverview, youtubeUrl]);
 
     // ── Cache: salvar metadata quando campos-chave mudam ──
     useEffect(() => {
@@ -558,6 +581,7 @@ export default function Dashboard() {
 
         if (videoUrl && String(videoUrl).startsWith("blob:"))
             URL.revokeObjectURL(videoUrl);
+        uploadAbortRef.current?.abort();
         videoFileRef.current = file;
         setVideoSourceType("local");
         setVideoUrl(URL.createObjectURL(file));
@@ -568,6 +592,7 @@ export default function Dashboard() {
     }
 
     function clearVideo() {
+        uploadAbortRef.current?.abort();
         if (videoUrl && String(videoUrl).startsWith("blob:")) {
             try {
                 URL.revokeObjectURL(videoUrl);
@@ -694,6 +719,8 @@ export default function Dashboard() {
     }, []);
 
     async function uploadToGemini(file) {
+        const controller = new AbortController();
+        uploadAbortRef.current = controller;
         try {
             setAiStatus("uploading");
             setUploadProgress(0);
@@ -709,7 +736,8 @@ export default function Dashboard() {
                 const end = Math.min(start + chunkSize, file.size);
                 const chunk = file.slice(start, end);
 
-                const uploadRes = await api.post("/videos/raw", chunk, {
+                const uploadRes = await postChunkWithRetry(chunk, {
+                    signal: controller.signal,
                     headers: {
                         "Content-Type": "application/octet-stream",
                         "X-Filename": file.name,
@@ -735,9 +763,13 @@ export default function Dashboard() {
             setAiStatus("processing");
             setAiStatus("ready");
         } catch (e) {
+            // Cancelado porque o usuário trocou ou removeu o vídeo: não é erro.
+            if (controller.signal.aborted) return;
             setAiStatus("error");
             const detail = e?.response?.data?.detail;
-            setAiError(detail || "Falha ao processar o vídeo com IA. Tente novamente mais tarde.");
+            setAiError(detail || "Falha ao enviar o vídeo. Verifique sua conexão e tente novamente.");
+        } finally {
+            if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
         }
     }
 
@@ -969,9 +1001,8 @@ export default function Dashboard() {
                 if (status === 401) {
                     setError(
                         detail ||
-                            "Chave de API Gemini não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                            "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                     );
-                    setSettingsOpen(true);
                 } else if (status === 429) {
                     setAiError(
                         detail || "Limite/quota do Gemini excedida (429).",
@@ -1014,9 +1045,8 @@ export default function Dashboard() {
             if (status === 401) {
                 setError(
                     detail ||
-                        "Chave de API não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                        "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                 );
-                setSettingsOpen(true);
             } else if (status === 429) {
                 setAiError(detail || "Limite/quota do Gemini excedida (429).");
             } else {
@@ -1349,9 +1379,8 @@ export default function Dashboard() {
             if (status === 401) {
                 setError(
                     detail ||
-                        "Chave de API não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                        "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                 );
-                setSettingsOpen(true);
             } else if (status === 429) {
                 setAiError(
                     detail ||
@@ -1677,9 +1706,8 @@ export default function Dashboard() {
             if (status === 401) {
                 setError(
                     detail ||
-                        "Chave de API Gemini não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                        "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                 );
-                setSettingsOpen(true);
             }
             // Keep fallback "GIF animado" para outros erros
         } finally {
@@ -1809,9 +1837,8 @@ export default function Dashboard() {
                     if (status === 401) {
                         setError(
                             parsed.detail ||
-                                "Chave de API não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                                "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                         );
-                        setSettingsOpen(true);
                         return;
                     }
                 } catch {}
@@ -1821,9 +1848,8 @@ export default function Dashboard() {
             if (status === 401) {
                 setError(
                     msg ||
-                        "Chave de API não configurada. Preencha sua chave no 'Ajuste de templates' para usar os recursos de IA.",
+                        "Sua sessão expirou ou a IA ainda não foi configurada no servidor. Entre de novo; se o erro continuar, fale com o administrador.",
                 );
-                setSettingsOpen(true);
                 return;
             }
             setAiError("Falha ao gerar documentação: " + msg);

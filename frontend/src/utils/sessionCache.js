@@ -168,6 +168,12 @@ function serializeStep(step) {
 // login) reativa os salvamentos.
 let savesSuspended = false;
 
+// O que já foi gravado no IndexedDB nesta aba: o estado é salvo com debounce a
+// cada mudança, e regravar o vídeo (até alguns GB) e todos os blobs a cada vez
+// seria caro. Zerados em clearDashboardCache.
+const savedBlobKeys = new Set();
+let savedVideoSignature = null;
+
 export async function saveDashboardCache(state) {
   if (savesSuspended) return;
   const {
@@ -210,21 +216,34 @@ export async function saveDashboardCache(state) {
 
   // ---- IndexedDB (blobs pesados) ----
   // Salvar blobs de cada step
+  const putOnce = async (key, blob) => {
+    // A chave inclui o tamanho: um passo editado no editor de imagem mantém o
+    // id, mas troca o blob, e precisa ser regravado.
+    const signature = `${key}:${blob.size}`;
+    if (savedBlobKeys.has(signature)) return;
+    await idbPut(IDB_STORE_BLOBS, key, blob);
+    savedBlobKeys.add(signature);
+  };
   const blobPromises = (steps || []).map(async (step) => {
     if (step.blob) {
-      await idbPut(IDB_STORE_BLOBS, `step_blob_${step.id}`, step.blob);
+      await putOnce(`step_blob_${step.id}`, step.blob);
     }
     // Para GIFs, salvar o blob do GIF original se existir
     if (step.is_gif && step.blob) {
-      await idbPut(IDB_STORE_BLOBS, `step_gif_${step.id}`, step.blob);
+      await putOnce(`step_gif_${step.id}`, step.blob);
     }
   });
 
   // Salvar o arquivo de vídeo local no IndexedDB (se for blob URL local)
   // Nota: só salvamos se for vídeo local (não YouTube) e o videoFile foi fornecido
   if (state.videoFile) {
-    await idbPut(IDB_STORE_VIDEO, "currentVideoFile", state.videoFile);
-    ssSet("videoFileName", state.videoFile.name || "video.mp4");
+    const file = state.videoFile;
+    const signature = `${file.name}:${file.size}:${file.lastModified}`;
+    if (signature !== savedVideoSignature) {
+      await idbPut(IDB_STORE_VIDEO, "currentVideoFile", file);
+      savedVideoSignature = signature;
+    }
+    ssSet("videoFileName", file.name || "video.mp4");
   }
 
   // Se for YouTube, o vídeo pode ser re-obtido via videoId, não precisamos salvar o blob
@@ -356,6 +375,8 @@ export function hasDashboardCache() {
  */
 export async function clearDashboardCache({ suspendSaves = false } = {}) {
   if (suspendSaves) savesSuspended = true;
+  savedBlobKeys.clear();
+  savedVideoSignature = null;
   // Limpar sessionStorage
   const keysToRemove = [
     "videoId",

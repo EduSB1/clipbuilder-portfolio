@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Video, Square, ArrowLeft, AlertTriangle, Upload } from "lucide-react";
 
 /**
@@ -38,6 +38,34 @@ export default function VideoArea({
   uploadProgress,
 }) {
   const manualUploadRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Soltar um arquivo fora da área de upload faria o navegador abrir o vídeo
+  // e sair da página, perdendo o trabalho não salvo.
+  useEffect(() => {
+    const block = (e) => {
+      if (e.dataTransfer?.types?.includes("Files")) e.preventDefault();
+    };
+    window.addEventListener("dragover", block);
+    window.addEventListener("drop", block);
+    return () => {
+      window.removeEventListener("dragover", block);
+      window.removeEventListener("drop", block);
+    };
+  }, []);
+
+  const dropHandlers = {
+    onDragOver: (e) => {
+      e.preventDefault();
+      setIsDragging(true);
+    },
+    onDragLeave: () => setIsDragging(false),
+    onDrop: (e) => {
+      e.preventDefault();
+      setIsDragging(false);
+      onPickVideo(e.dataTransfer?.files?.[0] ?? null);
+    },
+  };
   const showBotBlock = aiStatus === "error" && isBotBlockError(aiError);
   return (
     <div className="w-full max-w-[960px]">
@@ -370,14 +398,22 @@ export default function VideoArea({
             </div>
 
             {/* Upload de arquivo - Área central como player */}
-            <label className="flex-1 cursor-pointer group">
+            <label className="flex-1 cursor-pointer group" {...dropHandlers}>
               <input
                 type="file"
                 className="hidden"
                 accept="video/mp4,video/x-matroska,.mp4,.mkv"
-                onChange={(e) => onPickVideo(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  onPickVideo(e.target.files?.[0] ?? null);
+                  // Permite escolher o mesmo arquivo de novo depois de um erro.
+                  e.target.value = "";
+                }}
               />
-              <div className="h-full flex flex-col items-center justify-center text-center transition-colors hover:bg-[var(--accent-light)]/5">
+              <div
+                className={`h-full flex flex-col items-center justify-center text-center transition-colors hover:bg-[var(--accent-light)]/5 ${
+                  isDragging ? "ring-2 ring-[var(--accent)] bg-[var(--accent-light)]/10" : ""
+                }`}
+              >
                 <div
                   className="mb-4 flex h-20 w-20 items-center justify-center rounded-full transition-colors group-hover:scale-110"
                   style={{

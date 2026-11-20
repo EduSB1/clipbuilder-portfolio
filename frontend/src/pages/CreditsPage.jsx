@@ -29,6 +29,9 @@ const TRANSACTION_TYPE_CONFIG = {
     bonus: { label: "Bônus", icon: Gift, color: "#8b5cf6" },
 };
 
+// Pix gerado pelo Mercado Pago expira em 30 min por padrão.
+const PIX_MAX_POLL_MS = 30 * 60 * 1000;
+
 function formatDate(isoString) {
     if (!isoString) return "—";
     try {
@@ -87,8 +90,17 @@ function PixModal({ pixData, onClose, onSuccess }) {
             }
         };
 
-        // Poll every 4 seconds
-        pollingRef.current = setInterval(pollStatus, 4000);
+        // Poll every 4 seconds, até o QR Code expirar: antes a consulta não
+        // tinha fim e seguia enquanto a aba estivesse aberta.
+        const startedAt = Date.now();
+        pollingRef.current = setInterval(() => {
+            if (Date.now() - startedAt > PIX_MAX_POLL_MS) {
+                clearInterval(pollingRef.current);
+                setError("O QR Code expirou. Gere um novo para concluir o pagamento.");
+                return;
+            }
+            pollStatus();
+        }, 4000);
         // Initial check
         pollStatus();
 

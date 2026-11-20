@@ -2001,6 +2001,7 @@ async def upload_video_raw(
             status_code=400, detail="Formato inválido. Use .mp4 ou .mkv"
         )
 
+    first_sight = False
     if is_chunked:
         with _videos_lock:
             current = _uploads.get(upload_id)
@@ -2010,12 +2011,21 @@ async def upload_video_raw(
                 raise HTTPException(
                     status_code=409, detail="Upload desconhecido ou expirado. Envie o vídeo de novo."
                 )
+            first_sight = current is None
             _uploads[upload_id] = (user["id"], time.time())
 
-    # Chunked uploads are charged once, on the first chunk.
+    # A chunked upload is charged once: when its id is first seen. The client
+    # retries a chunk whose response got lost, and a retried chunk 0 must not
+    # charge again.
     _billing_user_id = None
-    if not is_chunked or chunk_index == 0:
-        _billing_user_id = _debit_user_credits(user, "/videos/raw")
+    if not is_chunked or first_sight:
+        try:
+            _billing_user_id = _debit_user_credits(user, "/videos/raw")
+        except HTTPException:
+            if first_sight:
+                with _videos_lock:
+                    _uploads.pop(upload_id, None)
+            raise
 
     if is_chunked:
         target_path = DATA_DIR / f"upload_{upload_id}_{chunk_index}.part"

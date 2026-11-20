@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { CREDITS_CHANGED_EVENT } from "../utils/api";
 import { api } from "../utils/api";
 
 /**
@@ -48,6 +49,10 @@ export default function useCredits() {
 
     useEffect(() => {
         fetchBalance();
+        // api.js avisa quando uma chamada pode ter mudado o saldo (uso de IA,
+        // upload, compra); antes o número do topo só mudava ao recarregar.
+        window.addEventListener(CREDITS_CHANGED_EVENT, fetchBalance);
+        return () => window.removeEventListener(CREDITS_CHANGED_EVENT, fetchBalance);
     }, [fetchBalance]);
 
     return {

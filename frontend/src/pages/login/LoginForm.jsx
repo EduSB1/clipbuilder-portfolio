@@ -517,17 +517,17 @@ export default function LoginForm() {
                                         await clerkSignOut();
                                         setError("Sessões limpas com sucesso. Tente novamente.");
                                         window.location.reload();
-                                    } catch (err) {
-                                        setError("Erro ao limpar: " + String(err));
+                                    } catch {
+                                        setError("Não foi possível reiniciar a sessão. Feche e abra o navegador.");
                                     } finally {
                                         setLoading(false);
                                     }
                                 }}
                                 className="text-xs font-medium hover:underline transition-all"
-                                style={{ color: "var(--danger, #f43f5e)", opacity: 0.8 }}
-                                title="Se você estiver preso num loop ou recebendo erros de sessão, clique aqui para resetar o Clerk."
+                                style={{ color: "var(--muted-text)" }}
+                                title="Encerra qualquer sessão salva neste navegador e recarrega a página."
                             >
-                                Limpar Sessões Travadas
+                                Problemas para entrar? Reiniciar a sessão
                             </button>
                         </div>
                     </>

@@ -44,7 +44,7 @@ export default function Header({ user, onLogout }) {
                     {userEmail && user?.role !== "admin" && (
                         <Link to="/credits" className="cb-pill-link credits-pill" title="Gerenciar créditos">
                             <Zap size={12} />
-                            <span className="text-xs font-semibold">{creditsLoading ? "…" : (credits ?? 0)}</span>
+                            <span className="text-xs font-semibold">{creditsLoading ? "…" : (credits ?? "—")}</span>
                         </Link>
                     )}
 
