@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Any
 
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, Field
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .constants import (
@@ -170,10 +170,17 @@ class Settings(BaseSettings):
     )
     """Origins allowed by CORS. Also used for `azp` validation when present."""
 
-    clerk_azp_strict: bool = False
-    """When true, reject Clerk tokens whose `azp` is not in `allowed_origins`.
-    When false, log a warning and accept the token.
+    clerk_azp_strict: bool = True
+    """Reject Clerk tokens whose `azp` is not in `allowed_origins` (default).
+
+    Set CLERK_AZP_STRICT=false only to diagnose a misconfigured
+    ALLOWED_ORIGINS: in that mode the token is accepted with a warning.
     """
+
+    api_docs_enabled: bool = Field(default=False, validation_alias="CLIPBUILDER_API_DOCS")
+    """Serve /docs, /redoc and /openapi.json. Off by default: the schema maps
+    every route and parameter for whoever asks. docker-compose.dev.yml
+    turns it on."""
 
     # AI Keys & Models
     gemini_api_key: str = ""

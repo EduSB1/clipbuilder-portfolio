@@ -277,9 +277,10 @@ def run_migrations() -> None:
         try:
             from sqlalchemy.orm import Session
 
-            from app.admin.settings.service import seed_settings
+            from app.admin.settings.service import encrypt_plaintext_secrets, seed_settings
             with Session(engine) as db:
                 seed_settings(db)
+                encrypt_plaintext_secrets(db)
             logger.info("System settings seeded/checked")
         except Exception as exc:
             logger.warning("Failed to seed system settings: %s", exc)

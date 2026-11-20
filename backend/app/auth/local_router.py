@@ -59,6 +59,11 @@ class LocalTokenResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+# bcrypt hash of a random throwaway value: checked when the account has no
+# usable hash, so every failed login costs the same time.
+_DUMMY_PASSWORD_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEeO5c3fXo5bWv1z0yYJ9bQ8sR0FvP6nLqS"
+
+
 @router.post("/token", response_model=LocalTokenResponse, include_in_schema=False)
 @limiter.limit(f"{LOCAL_LOGIN_RATE_LIMIT_PER_MINUTE}/minute")
 def local_login(request: Request, body: LocalLoginRequest = Body(...)):
@@ -103,72 +108,34 @@ def local_login(request: Request, body: LocalLoginRequest = Body(...)):
         with SessionLocal() as db:
             user = db.query(User).filter(User.email == email).first()
 
-            if not user:
-                logger.warning(
-                    "local_login: user not found | ip=%s email=%s",
-                    client_ip,
-                    masked_email,
-                )
-                # Constant-time delay to prevent user enumeration
-                import time
-
-                time.sleep(LOGIN_ANTI_ENUMERATION_DELAY_SECONDS)
-                raise HTTPException(status_code=401, detail="Credenciais inválidas")
-
-            if user.role != "admin":
-                logger.warning(
-                    "local_login: non-admin attempt | ip=%s email=%s role=%s",
-                    client_ip,
-                    masked_email,
-                    user.role,
-                )
-                import time
-
-                time.sleep(LOGIN_ANTI_ENUMERATION_DELAY_SECONDS)
-                raise HTTPException(status_code=401, detail="Credenciais inválidas")
-
-            if not user.is_active or user.deleted_at is not None:
-                logger.warning(
-                    "local_login: inactive/deleted user | ip=%s email=%s",
-                    client_ip,
-                    masked_email,
-                )
-                raise HTTPException(status_code=403, detail="Conta desativada")
-
-            # ── Verify password ────────────────────────────────────────
-            password_hash = getattr(user, "password_hash", None) or ""
-            if not password_hash:
-                logger.warning(
-                    "local_login: user has no password_hash | ip=%s email=%s",
-                    client_ip,
-                    masked_email,
-                )
-                raise HTTPException(
-                    status_code=401,
-                    detail="Este usuário não tem senha local configurada. "
-                    "Use o script reset_admin.py para definir uma senha.",
-                )
-
+            # Every failure looks the same to the caller: same message, same
+            # status and the same bcrypt cost (a dummy hash when there is no
+            # usable one). Before, distinct answers told apart "no such
+            # email", "inactive" and "no local password".
+            password_hash = (getattr(user, "password_hash", None) or "") if user else ""
             try:
-                valid = bcrypt.checkpw(
+                password_ok = bcrypt.checkpw(
                     password.encode("utf-8"),
-                    password_hash.encode("utf-8"),
-                )
+                    (password_hash or _DUMMY_PASSWORD_HASH).encode("utf-8"),
+                ) and bool(password_hash)
             except Exception as e:
-                logger.error(
-                    "local_login: bcrypt error | ip=%s email=%s err=%s",
-                    client_ip,
-                    masked_email,
-                    e,
-                )
-                valid = False
+                logger.error("local_login: bcrypt error | ip=%s email=%s err=%s", client_ip, masked_email, e)
+                password_ok = False
 
-            if not valid:
-                logger.warning(
-                    "local_login: wrong password | ip=%s email=%s",
-                    client_ip,
-                    masked_email,
-                )
+            reason = None
+            if not user:
+                reason = "user not found"
+            elif not password_hash:
+                reason = "no local password"
+            elif not password_ok:
+                reason = "wrong password"
+            elif user.role != "admin":
+                reason = f"non-admin (role={user.role})"
+            elif not user.is_active or user.deleted_at is not None:
+                reason = "inactive/deleted"
+
+            if reason:
+                logger.warning("local_login: refused (%s) | ip=%s email=%s", reason, client_ip, masked_email)
                 import time
 
                 time.sleep(LOGIN_ANTI_ENUMERATION_DELAY_SECONDS)

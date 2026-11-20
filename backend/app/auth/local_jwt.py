@@ -34,9 +34,20 @@ def _get_secret() -> str:
     return (settings.local_jwt_secret or "").strip()
 
 
+# HS256 with a short secret can be brute-forced offline from a single token.
+MIN_SECRET_LENGTH = 32
+
+
 def is_enabled() -> bool:
-    """Return True if local JWT login is configured (secret is set)."""
-    return bool(_get_secret())
+    """Return True if local JWT login is configured with a strong enough secret."""
+    secret = _get_secret()
+    if secret and len(secret) < MIN_SECRET_LENGTH:
+        logger.warning(
+            "local_jwt: LOCAL_JWT_SECRET shorter than %d characters; local login disabled",
+            MIN_SECRET_LENGTH,
+        )
+        return False
+    return bool(secret)
 
 
 def create_local_token(user_id: str, email: str, role: str) -> str:
@@ -100,9 +111,9 @@ def verify_local_token(token: str) -> dict[str, Any]:
     Raises:
         ValueError: Token invalid, expired, wrong issuer, or local JWT disabled.
     """
-    secret = _get_secret()
-    if not secret:
+    if not is_enabled():
         raise ValueError("Local JWT login is disabled")
+    secret = _get_secret()
 
     import base64
     import json as _json

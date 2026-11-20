@@ -74,4 +74,8 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Um único worker: o estado das sessões de vídeo vive em memória no processo
 # (`_videos` em main.py).  Antes de aumentar para --workers N, esse estado
 # precisa ir para o Postgres ou Redis.
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --forwarded-allow-ips '*': the backend is reachable only through the Compose
+# network (nginx), so it may trust X-Forwarded-For. nginx overwrites that
+# header with the real peer address; without this, every client looked like
+# the nginx container and the login rate limit was shared by everyone.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]

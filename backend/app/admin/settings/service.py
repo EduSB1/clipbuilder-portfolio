@@ -2,13 +2,65 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
 
+from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
 from app.admin.models import SystemSetting
 
 logger = logging.getLogger("clipbuilder")
+
+# Settings stored encrypted (Fernet) and never sent back to the browser.
+SENSITIVE_SETTINGS = {("smtp", "password")}
+# What the admin UI receives instead of a stored secret. Sending it back
+# means "keep the current value".
+SECRET_MASK = "********"
+
+
+def _fernet() -> Fernet:
+    """Fernet key derived from SECRET_KEY.
+
+    Rotating SECRET_KEY makes stored secrets unreadable: they have to be
+    entered again in the admin panel (decryption failures are logged).
+    """
+    from app.core.config import settings
+
+    digest = hashlib.sha256(b"clipbuilder-settings:" + settings.secret_key.encode()).digest()
+    return Fernet(base64.urlsafe_b64encode(digest))
+
+
+def _encrypt(value: str) -> str:
+    return _fernet().encrypt(value.encode()).decode()
+
+
+def _decrypt(value: str) -> str | None:
+    try:
+        return _fernet().decrypt(value.encode()).decode()
+    except (InvalidToken, ValueError):
+        logger.error("settings: could not decrypt a stored secret (SECRET_KEY changed?)")
+        return None
+
+
+def _is_sensitive(category: str, key: str) -> bool:
+    return (category, key) in SENSITIVE_SETTINGS
+
+
+def encrypt_plaintext_secrets(db: Session) -> None:
+    """Encrypt sensitive values saved before encryption existed."""
+    from sqlalchemy import select
+
+    for category, key in SENSITIVE_SETTINGS:
+        row = db.scalar(
+            select(SystemSetting).where(SystemSetting.category == category, SystemSetting.key == key)
+        )
+        if row and row.value and not row.is_encrypted:
+            row.value = _encrypt(row.value)
+            row.is_encrypted = True
+            logger.info("settings: encrypted stored %s/%s", category, key)
+    db.commit()
 
 DEFAULT_SEED = [
     ("smtp", "host", "", "string", "Servidor SMTP"),
@@ -93,7 +145,10 @@ def get_settings_by_category(db: Session, category: str | None = None) -> list[d
     return [
         {
             "key": r.key,
-            "value": r.value,
+            # Secrets never leave the server: the UI only learns whether one is set.
+            "value": (SECRET_MASK if r.value else "")
+            if _is_sensitive(r.category, r.key)
+            else r.value,
             "value_type": r.value_type,
             "description": r.description,
             "is_encrypted": r.is_encrypted,
@@ -118,6 +173,8 @@ def get_setting_value(category: str, key: str) -> str | None:
 
             row = db.scalar(select(SS).where(SS.category == category, SS.key == key))
             if row and row.value and str(row.value).strip():
+                if row.is_encrypted:
+                    return _decrypt(str(row.value))
                 return str(row.value).strip()
     except Exception:
         pass
@@ -143,6 +200,13 @@ def update_settings(
             )
         )
         if s:
-            s.value = str(value) if value is not None else ""
+            new_value = str(value) if value is not None else ""
+            if _is_sensitive(cat, key):
+                if new_value == SECRET_MASK:
+                    continue  # the UI echoed the mask: keep the stored secret
+                s.value = _encrypt(new_value) if new_value else ""
+                s.is_encrypted = bool(new_value)
+            else:
+                s.value = new_value
             s.last_modified_by = user_id
     db.commit()

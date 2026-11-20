@@ -149,7 +149,7 @@ async def extract_steps_endpoint(
         logger.exception("Step extraction failed: %s", exc)
         raise HTTPException(
             status_code=502,
-            detail=f"Step extraction failed: {exc}",
+            detail="Step extraction failed",
         ) from exc
 
     return ExtractStepsResponse(steps=steps, count=len(steps))

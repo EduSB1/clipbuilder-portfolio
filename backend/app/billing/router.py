@@ -359,7 +359,7 @@ async def billing_checkout_pix(
         logger.error("Mercado Pago Pix creation error: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao criar pagamento Pix: {str(exc)[:200]}",
+            detail="Erro ao criar pagamento Pix. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
 
@@ -484,7 +484,7 @@ async def billing_checkout_card(
         logger.error("Mercado Pago card payment error: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao processar pagamento: {str(exc)[:200]}",
+            detail="Erro ao processar pagamento. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
 
@@ -556,7 +556,7 @@ def billing_payment_status(
         logger.error("Error fetching payment status: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao consultar pagamento: {str(exc)[:200]}",
+            detail="Erro ao consultar pagamento. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
 

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.admin.dependencies import RequireAdmin
 from app.admin.settings.schemas import SettingItem, SettingsUpdate
 from app.admin.settings.service import (
+    SECRET_MASK,
     get_setting_value,
     get_settings_by_category,
     seed_settings,
@@ -115,7 +116,10 @@ def _resolve_smtp_config(body: SmtpDiagnosticRequest) -> dict:
         (body.username or "").strip() or _db("username") or os.getenv("SMTP_USER", "")
     )
     password = (
-        (body.password or "").strip() or _db("password") or os.getenv("SMTP_PASS", "")
+        # The panel shows the stored password as a mask: treat it as "use the saved one".
+        (body.password or "").strip().replace(SECRET_MASK, "")
+        or _db("password")
+        or os.getenv("SMTP_PASS", "")
     )
     from_email = (
         (body.from_email or "").strip()

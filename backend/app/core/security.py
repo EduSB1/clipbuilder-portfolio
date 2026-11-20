@@ -287,11 +287,12 @@ def verify_clerk_token(token: str) -> dict[str, Any]:
     # ALLOWED_ORIGINS does not include the exact origin that Clerk embeds as
     # `azp` (e.g. "https://clipbuilder.com.br" vs "https://www.clipbuilder.com.br").
     #
-    # To enable strict mode: set CLERK_AZP_STRICT=true in backend/.env
+    # Strict by default; CLERK_AZP_STRICT=false accepts with a warning, for
+    # diagnosing an ALLOWED_ORIGINS that misses an origin.
     azp = payload.get("azp")
     if azp is not None and isinstance(azp, str):
         allowed = list(settings.allowed_origins or [])
-        azp_strict = bool(getattr(settings, "clerk_azp_strict", False))
+        azp_strict = bool(getattr(settings, "clerk_azp_strict", True))
         if allowed and azp not in allowed:
             if azp_strict:
                 logger.warning(

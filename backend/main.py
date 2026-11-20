@@ -426,7 +426,16 @@ async def _lifespan(app: FastAPI):
 
 from app.core.limiter import limiter
 
-app = FastAPI(title="ClipBuilder", lifespan=_lifespan)
+# API docs are off unless CLIPBUILDER_API_DOCS=true (docker-compose.dev.yml):
+# the schema maps every route and parameter for whoever asks.
+_docs_enabled = bool(getattr(_app_settings, "api_docs_enabled", False))
+app = FastAPI(
+    title="ClipBuilder",
+    lifespan=_lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
+)
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -2877,7 +2886,7 @@ async def enhance_document(
         _refund_user_credits(_billing_user_id, "/enhance-document")
         logger.error("Erro ao gerar documento com Gemini: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Erro ao gerar documento: {str(exc)[:200]}"
+            status_code=500, detail="Erro ao gerar documento. Tente novamente; se o erro continuar, contate o suporte."
         ) from exc
 
     # Log Gemini usage for enhance_document
@@ -3024,7 +3033,7 @@ async def markdown_to_docx_endpoint(
         logger.error("Erro ao converter markdown para docx: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao exportar: {str(exc)[:200]}",
+            detail="Erro ao exportar. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
@@ -3083,7 +3092,7 @@ async def markdown_to_pdf_endpoint(request: Request, user: CurrentAuthorizedUser
         logger.error("Erro ao converter markdown para pdf: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao exportar PDF: {str(exc)[:200]}",
+            detail="Erro ao exportar PDF. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
@@ -3142,7 +3151,7 @@ async def markdown_to_html_endpoint(request: Request, user: CurrentAuthorizedUse
     except Exception as exc:
         logger.error("Erro ao converter markdown para html: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Erro ao converter: {str(exc)[:200]}"
+            status_code=500, detail="Erro ao converter. Tente novamente; se o erro continuar, contate o suporte."
         ) from exc
 
     html_bytes = html_doc.encode("utf-8")
@@ -3215,7 +3224,7 @@ async def describe_gif(
         logger.error("describe-gif failed: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Falha ao analisar GIF com Gemini: {str(exc)[:200]}",
+            detail="Falha ao analisar GIF com Gemini. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
     # Log Gemini usage for describe-gif
@@ -3295,7 +3304,7 @@ async def format_and_export(
         logger.error("Erro ao formatar documento com Gemini: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao formatar documento: {str(exc)[:200]}",
+            detail="Erro ao formatar documento. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
     if not formatted_md or not formatted_md.strip():
@@ -3339,7 +3348,7 @@ async def format_and_export(
         logger.error("Erro ao exportar documento: %s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao exportar: {str(exc)[:200]}",
+            detail="Erro ao exportar. Tente novamente; se o erro continuar, contate o suporte.",
         ) from exc
 
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
@@ -3473,7 +3482,7 @@ async def generate_documentation(
         _refund_user_credits(_billing_user_id, "/generate-documentation")
         logger.error("Erro ao gerar documentação estruturada: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Erro ao gerar documentação: {str(exc)[:200]}"
+            status_code=500, detail="Erro ao gerar documentação. Tente novamente; se o erro continuar, contate o suporte."
         ) from exc
 
     # Log Gemini usage for generate-documentation
@@ -3593,7 +3602,7 @@ async def generate_documentation(
     except Exception as exc:
         logger.error("Erro ao converter para DOCX: %s", exc, exc_info=True)
         raise HTTPException(
-            status_code=500, detail=f"Erro ao exportar DOCX: {str(exc)[:200]}"
+            status_code=500, detail="Erro ao exportar DOCX. Tente novamente; se o erro continuar, contate o suporte."
         ) from exc
 
     filename = f"{_safe_filename(title, 'documentacao')}.docx"

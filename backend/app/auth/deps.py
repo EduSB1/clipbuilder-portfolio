@@ -47,7 +47,11 @@ def get_current_user_jwt(
             return verify_clerk_token(token)
     except ValueError as e:
         logger.warning("auth_deps: verification failed (token_is_local=%s): %s", is_local_token(token), e)
-        raise HTTPException(status_code=401, detail=str(e)) from e
+        # The reason stays in the log: it can name the configured issuer or
+        # the failed check. The client only learns whether to refresh the
+        # token (the frontend retries on "expirado").
+        detail = "Token expirado" if "expired" in str(e).lower() else "Token inválido"
+        raise HTTPException(status_code=401, detail=detail) from e
 
 
 CurrentUserJWT = Annotated[dict[str, Any], Depends(get_current_user_jwt)]
