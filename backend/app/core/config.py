@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from pydantic import BeforeValidator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .constants import (
     DEFAULT_ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -35,8 +35,8 @@ def _parse_origins_value(v: Any) -> list[str]:
       - a comma-separated string → ``'https://a.com,https://b.com'``
       - empty / None             → default origins
 
-    This is used as a ``BeforeValidator`` so it runs *before* pydantic-settings
-    attempts its own JSON deserialization of the raw env-var value.
+    The field is marked ``NoDecode`` so pydantic-settings hands the raw env-var
+    string to this ``BeforeValidator`` instead of trying ``json.loads`` first.
     """
     if isinstance(v, list):
         return [str(x).strip() for x in v if str(x).strip()] or list(_DEFAULT_ORIGINS)
@@ -156,15 +156,16 @@ class Settings(BaseSettings):
     # CORS
     # ── NOTE ──────────────────────────────────────────────────────────────
     # Pydantic Settings v2 tries to ``json.loads()`` env-var values for
-    # complex types (``list[str]``) *before* any ``field_validator`` runs.
-    # A plain CSV like ``"https://a.com,https://b.com"`` is not valid JSON,
-    # so the parse fails with ``SettingsError``.
+    # complex types (``list[str]``) while *reading* the environment, before
+    # any validator runs. A plain CSV like ``"https://a.com,https://b.com"``
+    # (the format used in .env.example) is not valid JSON, so the app failed
+    # to start with ``SettingsError``. A ``BeforeValidator`` alone does not
+    # help, because it only runs after that decoding step.
     #
-    # Fix: wrap the type with ``BeforeValidator`` so our own parser
-    # (``_parse_origins_value``) converts the raw string into a list
-    # before pydantic-settings' JSON attempt.
+    # Fix: ``NoDecode`` turns that decoding off for this field, so the raw
+    # string reaches ``_parse_origins_value``, which accepts CSV and JSON.
     # ─────────────────────────────────────────────────────────────────────
-    allowed_origins: Annotated[list[str], BeforeValidator(_parse_origins_value)] = (
+    allowed_origins: Annotated[list[str], NoDecode, BeforeValidator(_parse_origins_value)] = (
         _DEFAULT_ORIGINS
     )
     """Origins allowed by CORS. Also used for `azp` validation when present."""
